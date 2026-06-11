@@ -10,13 +10,13 @@ def test_application_starts_with_valid_configuration(settings: Settings) -> None
     app = create_app(settings)
 
     with TestClient(app) as client:
-        assert client.app.state.settings is settings
+        assert app.state.settings is settings
         assert client.get("/openapi.json").status_code == 200
 
 
 def test_settings_reject_invalid_environment() -> None:
     with pytest.raises(ValidationError):
-        Settings(environment="unsafe")  # type: ignore[arg-type]
+        Settings.model_validate({"environment": "unsafe"})
 
 
 def test_settings_do_not_require_database_or_provider_credentials() -> None:

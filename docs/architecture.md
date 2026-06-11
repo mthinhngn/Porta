@@ -2,9 +2,11 @@
 
 ## Phase 0 scope
 
-Phase 0 defines contracts and durable boundaries without running an HTTP
-endpoint or calling an upstream provider. The supported API shape is a narrow,
-non-streaming subset of `POST /v1/chat/completions`.
+Phase 0 defines contracts and durable boundaries without exposing chat
+completion execution or calling an upstream provider. It runs an ASGI
+application with `GET /health/live`, `GET /health/ready`, and generated OpenAPI
+documentation. The future chat API shape is a narrow, non-streaming subset of
+`POST /v1/chat/completions`.
 
 Supported request concepts:
 
@@ -21,14 +23,16 @@ Supported response concepts:
 - OpenAI-style `{ "error": { "message", "type", "param", "code" } }`
 
 Streaming, multimodal content, tool definitions/calls, provider networking,
-endpoint execution, authentication, and routing policy are outside Phase 0.
+chat endpoint execution, authentication, and routing policy are outside Phase
+0. `POST /v1/chat/completions` returns `404` until a later phase registers the
+route.
 
 ## System context
 
 ```mermaid
 flowchart LR
     Client["OpenAI-compatible client"]
-    Transport["HTTP transport<br/>(later phase)"]
+    Transport["HTTP transport<br/>(health only in Phase 0)"]
     Domain["Domain contracts"]
     Service["Gateway orchestration<br/>(later phase)"]
     Provider["Provider protocol"]
@@ -36,7 +40,7 @@ flowchart LR
     Persistence["Persistence models"]
     Postgres[("PostgreSQL")]
 
-    Client -->|POST /v1/chat/completions| Transport
+    Client -->|health now; chat later| Transport
     Transport --> Domain
     Domain --> Service
     Service --> Provider
@@ -45,8 +49,16 @@ flowchart LR
     Persistence --> Postgres
 ```
 
-Dashed flow indicates an adapter that is intentionally not implemented in
-Phase 0.
+Dashed flow indicates an upstream adapter that is intentionally not
+implemented in Phase 0.
+
+## Phase 0 HTTP surface
+
+- `GET /health/live` confirms the application process can serve requests.
+- `GET /health/ready` confirms application configuration loaded successfully.
+- `GET /openapi.json` exposes only registered Phase 0 routes.
+- `/v1` is reserved for versioned APIs, but no chat completion route is
+  registered.
 
 ## Package boundaries
 
@@ -133,9 +145,16 @@ The initial schema represents:
 - `usage_records`: token accounting associated with a request and attempt
 - `audit_metadata`: privacy-reduced actor and client context
 
+Composite constraints preserve cross-row identity:
+
+- an attempt's `(model_id, provider_id)` must identify one model mapping
+- usage linked to an attempt must use the same `gateway_request_id`
+- usage totals must equal prompt plus completion tokens
+
 UUID primary keys, timezone-aware timestamps, constrained string lengths, and
 JSON/JSONB-compatible columns keep the models PostgreSQL-ready while allowing
-lightweight local metadata construction.
+lightweight local metadata construction. Privacy-sensitive columns carry
+database comments documenting allowed content and handling expectations.
 
 ## Alembic conventions
 
@@ -150,7 +169,8 @@ lightweight local metadata construction.
   ADR and rollback plan.
 - PostgreSQL enum types are avoided in the initial models so lifecycle values
   can evolve through ordinary constrained application strings.
-- Migrations are intentionally not included in Phase 0.
+- The initial Phase 0 revision creates all six persistence tables and their
+  integrity constraints. A clean `alembic upgrade head` must emit schema DDL.
 
 ## Error boundary
 

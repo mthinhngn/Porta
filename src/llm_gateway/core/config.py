@@ -12,8 +12,6 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="LLM_GATEWAY_",
-        env_file=".env",
-        env_file_encoding="utf-8",
         extra="ignore",
         frozen=True,
     )
@@ -33,4 +31,4 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Load and cache validated process configuration."""
 
-    return Settings()
+    return Settings(_env_file=".env", _env_file_encoding="utf-8")

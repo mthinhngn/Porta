@@ -3,8 +3,8 @@
 Phase 0 foundation for a privacy-conscious, OpenAI-compatible LLM gateway.
 This phase provides application composition, health checks, configuration,
 structured logging, domain contracts, provider test doubles, persistence
-metadata, and migration scaffolding. It does not expose chat completion or call
-an upstream provider.
+metadata, and an initial database migration. It does not expose chat completion
+or call an upstream provider.
 
 ## Requirements
 
@@ -44,7 +44,7 @@ uv run mypy
 ## Database Migrations
 
 The Alembic environment imports `llm_gateway.persistence.Base.metadata`.
-No initial revision is included in Phase 0.
+The initial revision creates the complete Phase 0 persistence schema.
 
 ```console
 uv run alembic upgrade head

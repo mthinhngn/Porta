@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 
@@ -50,7 +50,95 @@ def test_api_error_is_openai_shaped(settings: Settings) -> None:
         response = client.get("/api-error-test")
 
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == "model_not_found"
+    assert response.json() == {
+        "error": {
+            "message": "Model is unavailable.",
+            "type": "invalid_request_error",
+            "param": "model",
+            "code": "model_not_found",
+        }
+    }
+
+
+def test_http_error_preserves_string_detail_and_headers(settings: Settings) -> None:
+    app = create_app(settings)
+
+    @app.get("/http-error-test")
+    async def http_error_test() -> None:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded.",
+            headers={"Retry-After": "30"},
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/http-error-test")
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "30"
+    assert response.json() == {
+        "error": {
+            "message": "Rate limit exceeded.",
+            "type": "invalid_request_error",
+            "param": None,
+            "code": "http_error",
+        }
+    }
+
+
+def test_http_error_hides_non_string_detail(settings: Settings) -> None:
+    app = create_app(settings)
+
+    @app.get("/structured-http-error-test")
+    async def structured_http_error_test() -> None:
+        raise HTTPException(
+            status_code=400,
+            detail={"internal_context": "authorization=Bearer private-secret"},
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/structured-http-error-test")
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error": {
+            "message": "Request failed.",
+            "type": "invalid_request_error",
+            "param": None,
+            "code": "http_error",
+        }
+    }
+    assert "private-secret" not in response.text
+
+
+def test_http_error_hides_sensitive_string_detail_and_unsafe_headers(
+    settings: Settings,
+) -> None:
+    app = create_app(settings)
+
+    @app.get("/sensitive-http-error-test")
+    async def sensitive_http_error_test() -> None:
+        raise HTTPException(
+            status_code=401,
+            detail="authorization=Bearer private-secret",
+            headers={
+                "Authorization": "Bearer private-secret",
+                "Set-Cookie": "session=private-secret",
+                "X-Internal-Secret": "private-secret",
+                "Retry-After": "30",
+            },
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/sensitive-http-error-test")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["message"] == "Request failed."
+    assert response.headers["retry-after"] == "30"
+    assert "authorization" not in response.headers
+    assert "set-cookie" not in response.headers
+    assert "x-internal-secret" not in response.headers
+    assert "private-secret" not in response.text
 
 
 def test_internal_error_hides_exception_details(settings: Settings) -> None:
@@ -71,4 +159,5 @@ def test_internal_error_hides_exception_details(settings: Settings) -> None:
         "param": None,
         "code": "internal_error",
     }
+    assert response.headers["X-Request-ID"]
     assert "private-secret" not in response.text

@@ -11,6 +11,7 @@ from llm_gateway.domain import (
     ErrorResponse,
     TokenUsage,
 )
+from llm_gateway.domain.chat import FinishReason
 
 
 def test_chat_request_schema_accepts_supported_shape() -> None:
@@ -31,6 +32,7 @@ def test_chat_request_schema_accepts_supported_shape() -> None:
                 "tool_call_id": None,
             }
         ],
+        "stream": False,
         "temperature": 0.2,
         "top_p": None,
         "n": None,
@@ -50,9 +52,59 @@ def test_chat_request_schema_rejects_unknown_fields() -> None:
             {
                 "model": "gateway-model",
                 "messages": [{"role": "user", "content": "hello"}],
+                "unsupported": True,
+            }
+        )
+
+
+def test_chat_request_accepts_explicit_non_streaming_mode() -> None:
+    request = ChatCompletionRequest.model_validate(
+        {
+            "model": "gateway-model",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": False,
+        }
+    )
+
+    assert request.stream is False
+
+
+def test_chat_request_rejects_streaming_mode() -> None:
+    with pytest.raises(ValidationError):
+        ChatCompletionRequest.model_validate(
+            {
+                "model": "gateway-model",
+                "messages": [{"role": "user", "content": "hello"}],
                 "stream": True,
             }
         )
+
+
+def test_token_usage_rejects_inconsistent_total() -> None:
+    with pytest.raises(ValidationError):
+        TokenUsage(prompt_tokens=2, completion_tokens=3, total_tokens=4)
+
+
+@pytest.mark.parametrize(
+    ("role", "tool_call_id"),
+    [
+        (ChatRole.TOOL, None),
+        (ChatRole.USER, "call-1"),
+        (ChatRole.ASSISTANT, "call-1"),
+    ],
+)
+def test_chat_message_enforces_tool_call_id_role(
+    role: ChatRole,
+    tool_call_id: str | None,
+) -> None:
+    with pytest.raises(ValidationError):
+        ChatMessage(role=role, content="hello", tool_call_id=tool_call_id)
+
+
+def test_tool_message_accepts_tool_call_id() -> None:
+    message = ChatMessage(role=ChatRole.TOOL, content="result", tool_call_id="call-1")
+
+    assert message.tool_call_id == "call-1"
 
 
 def test_chat_response_and_error_schemas() -> None:
@@ -79,6 +131,7 @@ def test_chat_response_and_error_schemas() -> None:
     )
 
     assert response.object == "chat.completion"
+    assert response.choices[0].finish_reason is FinishReason.STOP
     assert response.usage.total_tokens == 2
     assert error.model_dump() == {
         "error": {
@@ -88,3 +141,22 @@ def test_chat_response_and_error_schemas() -> None:
             "code": "validation_error",
         }
     }
+
+
+def test_chat_response_choice_requires_assistant_message() -> None:
+    with pytest.raises(ValidationError):
+        ChatCompletionChoice(
+            index=0,
+            message=ChatMessage(role=ChatRole.USER, content="hello"),
+            finish_reason=FinishReason.STOP,
+        )
+
+
+@pytest.mark.parametrize("finish_reason", ["provider-specific", "tool_calls"])
+def test_chat_response_choice_rejects_unsupported_finish_reason(finish_reason: str) -> None:
+    with pytest.raises(ValidationError):
+        ChatCompletionChoice(
+            index=0,
+            message=ChatMessage(role=ChatRole.ASSISTANT, content="hello"),
+            finish_reason=finish_reason,
+        )

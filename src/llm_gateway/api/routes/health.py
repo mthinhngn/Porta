@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict
 
 from llm_gateway.core.config import Settings
+from llm_gateway.core.errors import ApiError
 
 router = APIRouter()
 
@@ -25,5 +26,10 @@ async def live() -> HealthResponse:
 async def ready(request: Request) -> HealthResponse:
     settings = getattr(request.app.state, "settings", None)
     if not isinstance(settings, Settings):
-        raise RuntimeError("Application configuration is unavailable")
+        raise ApiError(
+            message="Application configuration is unavailable.",
+            type="server_error",
+            status_code=503,
+            code="not_ready",
+        )
     return HealthResponse(status="ready")

@@ -6,6 +6,7 @@ from llm_gateway.core.context import bind_correlation_id, reset_correlation_id
 from llm_gateway.core.logging import (
     JsonFormatter,
     allowlisted_log_fields,
+    configure_logging,
     log_event,
 )
 
@@ -70,3 +71,87 @@ def test_json_logging_includes_only_operational_context() -> None:
     assert payload["status_code"] == 200
     assert "private prompt" not in stream.getvalue()
     assert "private-key" not in stream.getvalue()
+
+
+def test_allowed_fields_redact_suspicious_values_and_non_scalars() -> None:
+    safe = allowlisted_log_fields(
+        {
+            "event": "Bearer private-token",
+            "provider_name": "sk-provider-secret-value",
+            "method": ["GET"],
+            "status_code": 200,
+        }
+    )
+
+    assert safe == {
+        "event": "[REDACTED]",
+        "provider_name": "[REDACTED]",
+        "status_code": 200,
+    }
+
+
+def test_formatter_sanitizes_an_ordinary_log_message() -> None:
+    record = logging.LogRecord(
+        name="test.ordinary",
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg="provider failed with authorization=Bearer private-token",
+        args=(),
+        exc_info=None,
+    )
+
+    payload = json.loads(JsonFormatter().format(record))
+
+    assert payload["event"] == "[REDACTED]"
+    assert "private-token" not in json.dumps(payload)
+
+
+def test_configure_logging_is_idempotent_and_preserves_external_handlers() -> None:
+    root_logger = logging.getLogger()
+    original_handlers = root_logger.handlers[:]
+    original_level = root_logger.level
+    external_handler = logging.NullHandler()
+
+    try:
+        root_logger.handlers = [external_handler]
+
+        configure_logging("INFO")
+        configure_logging("DEBUG")
+
+        gateway_handlers = [
+            handler
+            for handler in root_logger.handlers
+            if isinstance(handler.formatter, JsonFormatter)
+        ]
+        assert external_handler in root_logger.handlers
+        assert len(gateway_handlers) == 1
+        assert root_logger.level == logging.DEBUG
+    finally:
+        root_logger.handlers = original_handlers
+        root_logger.setLevel(original_level)
+
+
+def test_external_root_handler_receives_sanitized_record() -> None:
+    stream = io.StringIO()
+    external_handler = logging.StreamHandler(stream)
+    external_handler.setFormatter(logging.Formatter("%(message)s"))
+    root_logger = logging.getLogger()
+    original_handlers = root_logger.handlers[:]
+    original_level = root_logger.level
+
+    try:
+        root_logger.handlers = [external_handler]
+        configure_logging("INFO")
+
+        logging.getLogger("test.external").error(
+            "authorization=Bearer private-secret",
+            extra={"prompt": "private prompt"},
+        )
+
+        assert "private-secret" not in stream.getvalue()
+        assert "private prompt" not in stream.getvalue()
+        assert "[REDACTED]" in stream.getvalue()
+    finally:
+        root_logger.handlers = original_handlers
+        root_logger.setLevel(original_level)

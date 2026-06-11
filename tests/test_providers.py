@@ -1,4 +1,7 @@
 import asyncio
+import math
+from dataclasses import FrozenInstanceError
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -77,8 +80,64 @@ def test_scripted_provider_preserves_typed_error() -> None:
     assert exc_info.value.code == "provider_rate_limit"
 
 
+def test_provider_error_does_not_retain_sensitive_message_or_details() -> None:
+    error = ProviderRateLimitError(
+        "authorization=Bearer private-secret",
+        details={
+            "prompt": "private prompt",
+            "status_code": 429,
+            "error_code": "rate_limited",
+        },
+    )
+
+    assert error.message == "Provider request failed."
+    assert dict(error.details) == {"status_code": 429, "error_code": "rate_limited"}
+    assert "private" not in str(error)
+
+
 def test_exhausted_scripted_provider_fails_without_network() -> None:
     provider = ScriptedProvider("scripted", [])
 
     with pytest.raises(ProviderUnavailableError):
         asyncio.run(provider.complete(request(), context()))
+
+
+def test_provider_context_metadata_is_an_immutable_snapshot() -> None:
+    source = {
+        "routing": {"region": "us-west", "fallbacks": ["secondary"]},
+        "labels": {"private", "test"},
+    }
+    provider_context = ProviderContext(
+        gateway_request_id=uuid4(),
+        correlation_id="correlation-1",
+        provider_name="scripted",
+        model_name="upstream-model",
+        timeout_seconds=10,
+        metadata=source,
+    )
+
+    cast(dict[str, Any], source["routing"])["region"] = "changed"
+    cast(list[str], cast(dict[str, Any], source["routing"])["fallbacks"]).append("third")
+
+    routing = cast(dict[str, Any], provider_context.metadata["routing"])
+    assert routing["region"] == "us-west"
+    assert routing["fallbacks"] == ("secondary",)
+    assert provider_context.metadata["labels"] == frozenset({"private", "test"})
+
+    with pytest.raises(TypeError):
+        routing["region"] = "changed"
+
+    with pytest.raises(FrozenInstanceError):
+        provider_context.provider_name = "changed"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize("timeout_seconds", [0, -1, math.inf, -math.inf, math.nan])
+def test_provider_context_requires_positive_finite_timeout(timeout_seconds: float) -> None:
+    with pytest.raises(ValueError, match="positive and finite"):
+        ProviderContext(
+            gateway_request_id=uuid4(),
+            correlation_id="correlation-1",
+            provider_name="scripted",
+            model_name="upstream-model",
+            timeout_seconds=timeout_seconds,
+        )
