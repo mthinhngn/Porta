@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+import asyncio
+from decimal import Decimal
+from pathlib import Path
+from uuid import UUID
+
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from llm_gateway.core.config import Settings
+from llm_gateway.core.quota import QUOTA_INCREMENT_SCRIPT, RedisQuotaEnforcer, quota_key
+from llm_gateway.domain import GenerateRequest
+from llm_gateway.main import create_app
+from llm_gateway.providers import GenerateProvider, GenerateProviderContext
+from llm_gateway.providers import GenerateProviderResult, ProviderTokenUsage
+from llm_gateway.persistence import (
+    Base,
+    GatewayRequest,
+    ProviderAttempt,
+    RouteBootstrap,
+    SqlAlchemyGatewayLedger,
+    UsageRecord,
+)
+from llm_gateway.services import GenerationService
+
+AUTHORIZATION_HEADER = {"Authorization": "Bearer test-gateway-key"}
+
+
+class StubProvider(GenerateProvider):
+    def __init__(self, result: GenerateProviderResult | Exception) -> None:
+        self._result = result
+
+    @property
+    def name(self) -> str:
+        return "openai"
+
+    async def generate(
+        self,
+        request: GenerateRequest,
+        context: GenerateProviderContext,
+    ) -> GenerateProviderResult:
+        assert request.model == "gateway-default"
+        assert context.provider_name == "openai"
+        if isinstance(self._result, Exception):
+            raise self._result
+        return self._result
+
+
+def _service(
+    database_path: Path,
+    provider_registry: dict[str, GenerateProvider],
+) -> GenerationService:
+    engine = create_engine(f"sqlite:///{database_path}")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    ledger = SqlAlchemyGatewayLedger(sessions)
+    service = GenerationService(
+        provider_registry=provider_registry,
+        ledger=ledger,
+        timeout_seconds=5.0,
+        bootstrap=RouteBootstrap(
+            provider_name="openai",
+            provider_adapter="openai_responses",
+            gateway_model="gateway-default",
+            upstream_model="gpt-4.1-mini",
+            currency="USD",
+            input_cost_per_million=Decimal("0.4000000000"),
+            cached_input_cost_per_million=Decimal("0.1000000000"),
+            output_cost_per_million=Decimal("1.6000000000"),
+        ),
+    )
+    service.bootstrap()
+    return service
+
+
+class StubQuotaRedisClient:
+    def __init__(self) -> None:
+        self._values: dict[str, int] = {}
+        self._lock = asyncio.Lock()
+
+    async def ping(self) -> bool:
+        return True
+
+    async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
+        assert script == QUOTA_INCREMENT_SCRIPT
+        assert numkeys == 1
+        key = str(keys_and_args[0])
+        limit = int(keys_and_args[1])
+        async with self._lock:
+            current = self._values.get(key, 0)
+            if current >= limit:
+                return 0
+            updated = current + 1
+            self._values[key] = updated
+            if updated > limit:
+                return 0
+            return updated
+
+    async def aclose(self) -> None:
+        return None
+
+    def value_for(self, key: str) -> int | None:
+        return self._values.get(key)
+
+
+def _quota_client(
+    tmp_path: Path,
+    redis_client: StubQuotaRedisClient,
+    *,
+    request_quota_limit: int,
+) -> TestClient:
+    provider = StubProvider(
+        GenerateProviderResult(
+            output="hello world",
+            usage=ProviderTokenUsage(
+                input_tokens=2,
+                cached_input_tokens=0,
+                output_tokens=3,
+                total_tokens=5,
+            ),
+        )
+    )
+    settings = Settings(
+        environment="test",
+        log_level="INFO",
+        redis_url="redis://example.test:6379/0",
+        gateway_api_keys=(
+            {
+                "api_key_id": "00000000-0000-0000-0000-000000000101",
+                "actor_id": "00000000-0000-0000-0000-000000000201",
+                "key": "test-gateway-key",
+                "enabled": True,
+                "request_quota_limit": request_quota_limit,
+            },
+        ),
+    )
+    app = create_app(
+        settings,
+        generation_service=_service(tmp_path / "quota.sqlite3", {"openai": provider}),
+        redis_client=redis_client,
+    )
+    client = TestClient(app)
+    client.headers.update(AUTHORIZATION_HEADER)
+    return client
+
+
+def test_generate_quota_rejects_over_limit_before_provider_or_usage(tmp_path: Path) -> None:
+    redis_client = StubQuotaRedisClient()
+
+    with _quota_client(tmp_path, redis_client, request_quota_limit=1) as client:
+        first = client.post("/v1/generate", json={"model": "gateway-default", "input": "hello"})
+        second = client.post("/v1/generate", json={"model": "gateway-default", "input": "hello"})
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["error"] == {
+        "message": "Quota exceeded.",
+        "type": "server_error",
+        "param": None,
+        "code": "quota_exceeded",
+    }
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'quota.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        assert session.query(GatewayRequest).count() == 1
+        assert session.query(ProviderAttempt).count() == 1
+        assert session.query(UsageRecord).count() == 1
+    engine.dispose()
+
+
+async def _run_enforcer_concurrently(
+    enforcer: RedisQuotaEnforcer,
+    *,
+    actor_id: UUID,
+    request_limit: int,
+    window_seconds: int,
+) -> list[str]:
+    from llm_gateway.core.errors import ApiError
+    from llm_gateway.core.quota import QuotaPolicy
+
+    async def attempt() -> str:
+        try:
+            await enforcer.enforce(
+                QuotaPolicy(
+                    actor_id=actor_id,
+                    request_limit=request_limit,
+                    window_seconds=window_seconds,
+                )
+            )
+        except ApiError as exc:
+            return str(exc.status_code)
+        return "200"
+
+    return list(await asyncio.gather(attempt(), attempt()))
+
+
+def test_quota_enforcer_allows_only_one_winner_for_last_slot() -> None:
+    redis_client = StubQuotaRedisClient()
+    actor_id = UUID("00000000-0000-0000-0000-000000000201")
+    redis_client._values[quota_key(actor_id)] = 1
+    enforcer = RedisQuotaEnforcer(redis_client)
+
+    results = asyncio.run(
+        _run_enforcer_concurrently(
+            enforcer,
+            actor_id=actor_id,
+            request_limit=2,
+            window_seconds=60,
+        )
+    )
+
+    assert sorted(results) == ["200", "429"]
+    assert redis_client.value_for(quota_key(actor_id)) == 2

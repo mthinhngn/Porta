@@ -6,6 +6,8 @@ from sqlalchemy import create_engine
 from llm_gateway.core.config import Settings
 from llm_gateway.main import create_app, run
 
+TEST_API_KEY = "test-gateway-key"
+
 
 def test_application_starts_with_valid_configuration(settings: Settings) -> None:
     app = create_app(settings)
@@ -93,6 +95,7 @@ def test_chat_completion_endpoint_is_not_implemented(client: TestClient) -> None
 def test_generate_endpoint_requires_configured_service(client: TestClient) -> None:
     response = client.post(
         "/v1/generate",
+        headers={"Authorization": f"Bearer {TEST_API_KEY}"},
         json={"model": "test", "input": "hello"},
     )
 

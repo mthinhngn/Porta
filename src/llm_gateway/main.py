@@ -10,10 +10,12 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from llm_gateway.api.router import api_router
+from llm_gateway.core.auth import GatewayAuthMiddleware
 from llm_gateway.core.config import Settings, get_settings
 from llm_gateway.core.errors import install_error_handlers
 from llm_gateway.core.logging import configure_logging
 from llm_gateway.core.middleware import CorrelationIdMiddleware
+from llm_gateway.core.redis import RedisClient, build_redis_client
 from llm_gateway.persistence.ledger import RouteBootstrap, SqlAlchemyGatewayLedger
 from llm_gateway.providers.openai_responses import OpenAIResponsesProvider
 from llm_gateway.services.generation import GenerationService
@@ -24,6 +26,7 @@ def create_app(
     *,
     generation_service: GenerationService | None = None,
     session_factory: sessionmaker[Session] | None = None,
+    redis_client: RedisClient | None = None,
 ) -> FastAPI:
     app_settings = settings or get_settings()
     configure_logging(app_settings.log_level)
@@ -32,6 +35,9 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = app_settings
         app.state.generation_service = generation_service
+        app.state.redis_client = redis_client
+        if app.state.redis_client is None and app_settings.redis_url is not None:
+            app.state.redis_client = build_redis_client(app_settings.redis_url)
         if app.state.generation_service is None and session_factory is not None:
             app.state.generation_service = _build_generation_service(
                 settings=app_settings,
@@ -50,6 +56,9 @@ def create_app(
         if isinstance(service, GenerationService):
             service.bootstrap()
         yield
+        teardown_redis = cast(RedisClient | None, getattr(app.state, "redis_client", None))
+        if teardown_redis is not None:
+            await teardown_redis.aclose()
         teardown_engine = cast(Engine | None, getattr(app.state, "engine", None))
         if teardown_engine is not None:
             teardown_engine.dispose()
@@ -61,6 +70,7 @@ def create_app(
     )
     install_error_handlers(app)
     app.include_router(api_router)
+    app.add_middleware(GatewayAuthMiddleware)
     app.add_middleware(
         CorrelationIdMiddleware,
         header_name=app_settings.correlation_id_header,

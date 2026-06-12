@@ -37,6 +37,7 @@ from llm_gateway.providers import (
 )
 from llm_gateway.services import GenerationService
 
+AUTHORIZATION_HEADER = {"Authorization": "Bearer test-gateway-key"}
 PRIVATE_PROMPT = "phase1-private-prompt-sentinel"
 PRIVATE_OUTPUT = "phase1-private-output-sentinel"
 PRIVATE_SECRET = "sk-phase1-private-secret-sentinel"
@@ -148,6 +149,20 @@ def _client(
         environment="test",
         log_level="INFO",
         openai_api_key=openai_api_key,
+        gateway_api_keys=(
+            {
+                "api_key_id": "00000000-0000-0000-0000-000000000101",
+                "actor_id": "00000000-0000-0000-0000-000000000201",
+                "key": "test-gateway-key",
+                "enabled": True,
+            },
+            {
+                "api_key_id": "00000000-0000-0000-0000-000000000102",
+                "actor_id": "00000000-0000-0000-0000-000000000202",
+                "key": "disabled-gateway-key",
+                "enabled": False,
+            },
+        ),
     )
     app = create_app(
         settings,
@@ -157,7 +172,9 @@ def _client(
             ledger_type=ledger_type,
         ),
     )
-    return TestClient(app)
+    client = TestClient(app)
+    client.headers.update(AUTHORIZATION_HEADER)
+    return client
 
 
 def _database_dump(database_path: Path) -> str:
@@ -621,3 +638,61 @@ def test_generate_missing_registered_provider_fails_terminally(tmp_path: Path) -
     assert attempt.status == "failed"
     assert attempt.error_code == "provider_not_configured"
     assert usage_count == 0
+
+
+def test_generate_requires_gateway_api_key_before_provider_or_ledger(tmp_path: Path) -> None:
+    provider = RecordingProvider()
+
+    with _client(tmp_path, {"openai": provider}) as client:
+        response = client.post(
+            "/v1/generate",
+            headers={"Authorization": ""},
+            json={"model": "gateway-default", "input": "hello"},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["error"] == {
+        "message": "Authentication required.",
+        "type": "invalid_request_error",
+        "param": None,
+        "code": "authentication_error",
+    }
+    assert provider.calls == 0
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        assert session.query(GatewayRequest).count() == 0
+        assert session.query(ProviderAttempt).count() == 0
+        assert session.query(UsageRecord).count() == 0
+    engine.dispose()
+
+
+def test_generate_rejects_disabled_gateway_api_key_before_provider_or_ledger(
+    tmp_path: Path,
+) -> None:
+    provider = RecordingProvider()
+
+    with _client(tmp_path, {"openai": provider}) as client:
+        response = client.post(
+            "/v1/generate",
+            headers={"Authorization": "Bearer disabled-gateway-key"},
+            json={"model": "gateway-default", "input": "hello"},
+        )
+
+    assert response.status_code == 403
+    assert response.json()["error"] == {
+        "message": "API key is disabled.",
+        "type": "invalid_request_error",
+        "param": None,
+        "code": "authentication_error",
+    }
+    assert provider.calls == 0
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        assert session.query(GatewayRequest).count() == 0
+        assert session.query(ProviderAttempt).count() == 0
+        assert session.query(UsageRecord).count() == 0
+    engine.dispose()

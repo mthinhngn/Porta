@@ -16,6 +16,102 @@ routing, and additional providers are outside Phase 1. The earlier
 chat-completion contracts remain transport-neutral foundations;
 `/v1/chat/completions` is not registered.
 
+## Phase 2 contract freeze
+
+Phase 2 keeps the same `POST /v1/generate` request body and extends the gateway
+around it. This section freezes the contracts that later implementation steps
+must follow.
+
+### Request path
+
+The final runtime order for Phase 2 is:
+
+1. authenticate the gateway API key
+2. evaluate gateway guardrails
+3. enforce per-actor quota
+4. check the per-actor response cache
+5. execute provider selection, retry, and fallback within one deadline
+6. persist the terminal result
+
+The build order may differ, but later implementation must preserve this runtime
+order exactly.
+
+### Authentication
+
+- `POST /v1/generate` requires `Authorization: Bearer <gateway_api_key>`.
+- The request body remains identical to Phase 1. Caller identity does not move
+  into the JSON payload.
+- A valid gateway API key resolves exactly one internal actor identity.
+- Missing, unknown, or disabled keys must fail before guardrails, quota, cache,
+  or provider execution.
+- Authentication failures must be sanitized and must not create provider-attempt
+  or usage rows.
+
+### Actor and key registry
+
+The actor/key registry must be able to express:
+
+- key hash
+- stable `actor_id`
+- key enabled or disabled state
+- quota policy
+- optional provider-access policy
+
+Raw API keys are runtime secrets and must never be persisted verbatim.
+
+### Public response contract
+
+Phase 2 adds metadata to the existing response shape without changing the
+request body:
+
+- `served_from_cache: bool`
+- `attempt_count: int`
+- `provider: str`
+
+`provider` continues to report the terminal winning provider. Cached responses
+must still report the provider that produced the cached result.
+
+### Cache contract
+
+- Cache scope is per actor.
+- Cache key material is:
+  `actor_id + normalized request fingerprint + resolved gateway model + guardrail_version`.
+- Only successful normalized gateway responses may be cached.
+- Blocked, failed, timed out, partial, or malformed upstream outcomes must not
+  populate the cache.
+- Cache entries must expire by TTL and must stop matching after a
+  `guardrail_version` change.
+- Cache storage must not expose raw prompt text, generated output, or secrets in
+  keys or values.
+
+### Guardrail contract
+
+- Guardrails run before cache lookup and before any provider attempt.
+- The only normalized outcomes are `allow` and `block`.
+- A `block` result carries only a sanitized reason code.
+- Blocked requests must produce zero provider calls, zero usage rows, and zero
+  charges.
+- Prompt or output text from blocked requests must not appear in logs,
+  persistence, or Redis.
+
+### Provider pool and retry contract
+
+- The provider pool starts with primary `openai`.
+- Ordered fallback providers are `anthropic`, then `gemini`.
+- Retry policy allows at most one same-provider retry for retryable failures.
+- All attempts share one absolute end-to-end deadline budget.
+- Non-retryable failures must not trigger retry or fallback.
+- Retry/fallback selection must respect any actor-level provider-access policy.
+
+### Ledger invariants
+
+- One gateway request may have multiple provider attempts.
+- Every provider attempt gets its own attempt row in chronological order.
+- Exactly one terminal winning attempt may produce one usage row and one charge.
+- Failed, timed out, blocked, or abandoned attempts must never create usage.
+- Reconciliation logic must preserve the single-charge invariant even if
+  persistence becomes ambiguous after upstream success.
+
 ## System context
 
 ```mermaid
@@ -52,6 +148,8 @@ actors without trusting a caller-supplied identity.
 - estimated cost and currency
 - routing reason
 - provider cache hit or miss
+- whether the terminal response was served from cache
+- how many provider attempts were used
 - end-to-end latency
 
 Provider SDK and persistence types never cross the public HTTP boundary.
