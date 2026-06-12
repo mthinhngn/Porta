@@ -13,8 +13,9 @@ release evidence and cannot change this verdict.
 ## Candidate
 
 - Failed candidate SHA A: `1167eb61636d964ff0cb8f75186a2fa159b06c64`
-- Repaired candidate SHA: pending
-- Final evidence SHA B: pending
+- Repaired candidate SHA: `caa9ed9921a8c5a76f3b67d67ee2715f12039246`
+- Evidence SHA B: this evidence-only commit; verify its exact value with
+  `git rev-parse HEAD` and `git ls-remote origin refs/heads/main`
 - Branch: `main`
 - Remote: private `mthinhngn/llm-gateway`
 
@@ -22,19 +23,19 @@ release evidence and cannot change this verdict.
 
 | Check | Result | Evidence |
 | --- | --- | --- |
-| Frozen install | pending | `uv sync --frozen` |
-| Ruff lint | pending | `uv run ruff check .` |
-| Ruff format | pending | `uv run ruff format --check .` |
-| Strict mypy | pending | `uv run mypy` |
-| Complete pytest | pending | `uv run pytest` |
-| Alembic head | pending | `uv run alembic heads` |
-| Migration SQL | pending | `uv run alembic upgrade head --sql` |
-| Health probes | pending | real Uvicorn process |
-| Live OpenAI success | pending | approved cost below USD 0.01 |
-| Live auth failure | pending | invalid-key network probe |
-| Secret/privacy scan | pending | tracked files and runtime logs |
-| Clean clone | pending | detached exact SHA |
-| Private remote sync | pending | local, upstream, and remote SHA equality |
+| Frozen install | pass | 43 packages checked on repaired candidate and clean clone |
+| Ruff lint | pass | `uv run ruff check .` |
+| Ruff format | pass | 49 files formatted |
+| Strict mypy | pass | 30 source files |
+| Complete pytest | pass with live skips | `155 passed, 2 skipped`; only opt-in live tests skipped |
+| Alembic head | pass | single `20260612_0003` head |
+| Migration SQL | pass | complete upgrade and downgrade SQL; deduplication precedes uniqueness |
+| Health probes | pass | packaged server returned live/ready and released its listener |
+| Live OpenAI success | blocked | no replacement key configured |
+| Live auth failure | pass | real OpenAI 401 mapped to sanitized gateway 502 |
+| Secret/privacy scan | pass | no non-test credential-shaped values; query probe absent from logs |
+| Clean clone | pass | detached repaired candidate repeated the complete non-paid gate |
+| Private remote sync | pass | private repo; local, upstream, and remote SHA equal |
 
 Windows gate commands set `UV_LINK_MODE=copy` and use a fresh local
 `UV_CACHE_DIR` to avoid cloud-file hardlink failures.
@@ -108,24 +109,30 @@ key sentinels from all persisted table values.
 
 ### Provider and API
 
-- Reviewer: pending
-- Reviewed SHA: pending
-- Verdict: pending
-- Findings: pending
+- Reviewer: independent read-only provider/API reviewer
+- Reviewed SHA: `caa9ed9921a8c5a76f3b67d67ee2715f12039246`
+- Verdict: `CORE REVIEW: FAIL`
+- Findings: no code findings; paid success smoke blocked by missing replacement key
+- Evidence: `90 passed` focused; `155 passed, 2 skipped` full; Ruff, format,
+  mypy, migration SQL, and invalid-key live probe passed
 
 ### Ledger and migrations
 
-- Reviewer: pending
-- Reviewed SHA: pending
-- Verdict: pending
-- Findings: pending
+- Reviewer: independent read-only ledger/migration reviewer
+- Reviewed SHA: `caa9ed9921a8c5a76f3b67d67ee2715f12039246`
+- Verdict: `CORE REVIEW: PASS`
+- Findings: none
+- Evidence: `48 passed` focused; full suite, Ruff, format, mypy, upgrade,
+  downgrade, reconciliation mismatch probe, and clean state passed
 
 ### Privacy and release
 
-- Reviewer: pending
-- Reviewed SHA: pending
-- Verdict: pending
-- Findings: pending
+- Reviewer: independent read-only privacy/release reviewer
+- Reviewed SHA: `caa9ed9921a8c5a76f3b67d67ee2715f12039246`
+- Verdict: `CORE REVIEW: FAIL`
+- Findings: paid success smoke blocked; this evidence commit was still pending
+- Evidence: clean-clone gate, packaged-server query privacy probe, psycopg
+  runtime construction, secret scan, private remote, and exact SHA sync passed
 
 ## Live-call cost
 
@@ -133,7 +140,7 @@ key sentinels from all persisted table values.
 - Model: `gpt-4.1-mini`
 - Configured preflight ceiling: USD 0.0001280000
 - Paid live success result: pending
-- Invalid-key live failure result: pending
+- Invalid-key live failure result: pass
 - Actual recorded gateway cost: pending
 
 ## Finalization rule
