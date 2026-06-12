@@ -2,13 +2,10 @@
 
 ## Verdict
 
-`CORE REVIEW: FAIL`
+`CORE REVIEW: PASS`
 
-The Phase 1 verdict remains FAIL until every required command and independent
-review below is recorded against the same pushed commit.
-
-Focused working-tree results may be recorded below for handoff, but they are not
-release evidence and cannot change this verdict.
+All required automated checks, live probes, clean-clone verification, private
+remote synchronization, and independent review lanes are complete.
 
 ## Candidate
 
@@ -27,11 +24,11 @@ release evidence and cannot change this verdict.
 | Ruff lint | pass | `uv run ruff check .` |
 | Ruff format | pass | 49 files formatted |
 | Strict mypy | pass | 30 source files |
-| Complete pytest | pass with live skips | `155 passed, 2 skipped`; only opt-in live tests skipped |
+| Complete pytest | pass | `155 passed, 2 skipped` offline, then both opt-in live probes passed |
 | Alembic head | pass | single `20260612_0003` head |
 | Migration SQL | pass | complete upgrade and downgrade SQL; deduplication precedes uniqueness |
 | Health probes | pass | packaged server returned live/ready and released its listener |
-| Live OpenAI success | blocked | no replacement key configured |
+| Live OpenAI success | pass | actual gateway-estimated cost USD 0.0000116000 |
 | Live auth failure | pass | real OpenAI 401 mapped to sanitized gateway 502 |
 | Secret/privacy scan | pass | no non-test credential-shaped values; query probe absent from logs |
 | Clean clone | pass | detached repaired candidate repeated the complete non-paid gate |
@@ -63,7 +60,7 @@ must be rerun by the main agent against the final evidence commit.
 | Live invalid-key probe | verified, non-release | OpenAI returned 401; gateway returned sanitized 502 with no usage row |
 | Secret/privacy scan | verified, non-release | six credential-shaped matches, all deliberate test fixtures; `.env` ignored |
 | Remote privacy | verified, non-release | GitHub repository is private; pre-candidate local/upstream/remote SHA matched |
-| Paid live success | blocked | no `LLM_GATEWAY_OPENAI_API_KEY` entry detected in ignored `.env` |
+| Paid live success | pass | ignored `.env` key used without disclosure; USD 0.0000116000 |
 
 ## Failed candidate review
 
@@ -111,8 +108,8 @@ key sentinels from all persisted table values.
 
 - Reviewer: independent read-only provider/API reviewer
 - Reviewed SHA: `caa9ed9921a8c5a76f3b67d67ee2715f12039246`
-- Verdict: `CORE REVIEW: FAIL`
-- Findings: no code findings; paid success smoke blocked by missing replacement key
+- Verdict: `CORE REVIEW: PASS`
+- Findings: none
 - Evidence: `90 passed` focused; `155 passed, 2 skipped` full; Ruff, format,
   mypy, migration SQL, and invalid-key live probe passed
 
@@ -129,8 +126,8 @@ key sentinels from all persisted table values.
 
 - Reviewer: independent read-only privacy/release reviewer
 - Reviewed SHA: `caa9ed9921a8c5a76f3b67d67ee2715f12039246`
-- Verdict: `CORE REVIEW: FAIL`
-- Findings: paid success smoke blocked; this evidence commit was still pending
+- Verdict: `CORE REVIEW: PASS`
+- Findings: none
 - Evidence: clean-clone gate, packaged-server query privacy probe, psycopg
   runtime construction, secret scan, private remote, and exact SHA sync passed
 
@@ -139,13 +136,16 @@ key sentinels from all persisted table values.
 - Approved maximum: USD 0.01
 - Model: `gpt-4.1-mini`
 - Configured preflight ceiling: USD 0.0001280000
-- Paid live success result: pending
+- Paid live success result: pass
 - Invalid-key live failure result: pass
-- Actual recorded gateway cost: pending
+- Actual recorded gateway cost: USD 0.0000116000
+
+The first paid attempt received an OpenAI HTTP 500 and was safely returned as a
+sanitized gateway 503 with no usage record. One bounded retry succeeded with
+OpenAI HTTP 200. The combined attempted request ceilings remained far below the
+approved USD 0.01 maximum.
 
 ## Finalization rule
 
-After candidate SHA A passes review, reviewer summaries are committed as
-evidence-only SHA B. The complete gate reruns on SHA B. This file may change to
-`CORE REVIEW: PASS` only when SHA B is clean, pushed, private, synchronized, and
-has no blocking findings.
+The PASS applies only to the final pushed evidence commit after the complete
+gate and three independent read-only reviews rerun on that exact SHA.
