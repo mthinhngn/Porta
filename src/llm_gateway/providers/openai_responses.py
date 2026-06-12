@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from llm_gateway.domain import GenerateRequest, GenerateTokenUsage
+from llm_gateway.domain import GenerateRequest
 from llm_gateway.providers.errors import (
     ProviderAuthenticationError,
     ProviderBadRequestError,
@@ -20,68 +20,118 @@ from llm_gateway.providers.protocol import (
     GenerateProvider,
     GenerateProviderContext,
     GenerateProviderResult,
+    ProviderTokenUsage,
 )
 
+_MALFORMED_PAYLOAD = "Provider response payload was malformed."
+_MALFORMED_USAGE = "Provider response usage was malformed."
+_INCOMPLETE_RESPONSE = "Provider response was not completed."
+_REFUSAL_RESPONSE = "Provider response contained a refusal."
+_NO_OUTPUT_RESPONSE = "Provider response contained no text output."
 
-def _usage_int(value: object) -> int:
+
+def _usage_int(value: object) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ProviderResponseError("Provider response usage was malformed.")
+        return None
     if value < 0:
-        raise ProviderResponseError("Provider response usage was malformed.")
+        return None
     return value
 
 
-def _extract_output_text(payload: Mapping[str, Any]) -> str:
+def _extract_output_text(payload: Mapping[str, Any]) -> tuple[str | None, str | None]:
     output_items = payload.get("output")
     if not isinstance(output_items, list):
-        raise ProviderResponseError("Provider response payload was malformed.")
+        return None, _MALFORMED_PAYLOAD
 
     parts: list[str] = []
     for item in output_items:
-        if not isinstance(item, Mapping) or item.get("type") != "message":
+        if not isinstance(item, Mapping):
+            return None, _MALFORMED_PAYLOAD
+        if item.get("type") != "message":
             continue
         content = item.get("content")
         if not isinstance(content, list):
-            continue
+            return None, _MALFORMED_PAYLOAD
         for block in content:
-            if isinstance(block, Mapping) and block.get("type") == "output_text":
+            if not isinstance(block, Mapping):
+                return None, _MALFORMED_PAYLOAD
+            block_type = block.get("type")
+            if block_type == "refusal":
+                return None, _REFUSAL_RESPONSE
+            if block_type == "output_text":
                 text = block.get("text")
-                if isinstance(text, str):
-                    parts.append(text)
-    if not parts:
-        raise ProviderResponseError("Provider response payload was malformed.")
-    return "".join(parts)
+                if not isinstance(text, str):
+                    return None, _MALFORMED_PAYLOAD
+                parts.append(text)
+
+    output = "".join(parts)
+    if not output:
+        return None, _NO_OUTPUT_RESPONSE
+    return output, None
 
 
-def _extract_usage(payload: Mapping[str, Any]) -> GenerateTokenUsage:
+def _extract_usage(payload: Mapping[str, Any]) -> ProviderTokenUsage | None:
     usage = payload.get("usage")
     if not isinstance(usage, Mapping):
-        raise ProviderResponseError("Provider response usage was malformed.")
+        return None
 
     input_tokens = _usage_int(usage.get("input_tokens"))
     output_tokens = _usage_int(usage.get("output_tokens"))
     total_tokens = _usage_int(usage.get("total_tokens"))
+    if input_tokens is None or output_tokens is None or total_tokens is None:
+        return None
     if total_tokens != input_tokens + output_tokens:
-        raise ProviderResponseError("Provider response usage was malformed.")
+        return None
 
-    return GenerateTokenUsage(
+    if "input_tokens_details" not in usage:
+        cached_input_tokens = 0
+    else:
+        input_details = usage["input_tokens_details"]
+        if not isinstance(input_details, Mapping) or "cached_tokens" not in input_details:
+            return None
+        parsed_cached_input_tokens = _usage_int(input_details["cached_tokens"])
+        if parsed_cached_input_tokens is None or parsed_cached_input_tokens > input_tokens:
+            return None
+        cached_input_tokens = parsed_cached_input_tokens
+
+    return ProviderTokenUsage(
         input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
     )
 
 
-def _cache_status(payload: Mapping[str, Any]) -> str:
-    usage = payload.get("usage")
-    if not isinstance(usage, Mapping):
-        return "miss"
-    usage_details = usage.get("input_tokens_details")
-    if not isinstance(usage_details, Mapping):
-        return "miss"
-    cached_tokens = usage_details.get("cached_tokens")
-    if isinstance(cached_tokens, int) and cached_tokens > 0:
-        return "hit"
-    return "miss"
+def _normalize_response(
+    payload: Mapping[str, Any],
+) -> tuple[GenerateProviderResult | None, str | None]:
+    status = payload.get("status")
+    if not isinstance(status, str):
+        return None, _MALFORMED_PAYLOAD
+    if status != "completed":
+        return None, _INCOMPLETE_RESPONSE
+
+    output, output_error = _extract_output_text(payload)
+    if output_error is not None:
+        return None, output_error
+
+    usage = _extract_usage(payload)
+    if usage is None:
+        return None, _MALFORMED_USAGE
+
+    assert output is not None
+    provider_request_id = payload.get("id")
+    return (
+        GenerateProviderResult(
+            output=output,
+            usage=usage,
+            provider_request_id=provider_request_id
+            if isinstance(provider_request_id, str)
+            else None,
+            cache_status="hit" if usage.cached_input_tokens > 0 else "miss",
+        ),
+        None,
+    )
 
 
 def _map_error(response: httpx.Response) -> Exception:
@@ -135,13 +185,10 @@ class OpenAIResponsesProvider(GenerateProvider):
             payload["top_p"] = request.top_p
         if request.max_output_tokens is not None:
             payload["max_output_tokens"] = request.max_output_tokens
-        if request.user is not None:
-            payload["user"] = request.user
 
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
-            "OpenAI-Beta": "responses=v1",
         }
 
         try:
@@ -156,21 +203,27 @@ class OpenAIResponsesProvider(GenerateProvider):
             raise ProviderUnavailableError("Provider is unavailable.") from exc
 
         if response.status_code >= 400:
-            raise _map_error(response)
+            error = _map_error(response)
+            del response
+            raise error
 
         try:
             body = response.json()
-        except ValueError as exc:
-            raise ProviderResponseError("Provider response payload was malformed.") from exc
+        except ValueError:
+            body = None
         if not isinstance(body, Mapping):
-            raise ProviderResponseError("Provider response payload was malformed.")
+            del body
+            del response
+            raise ProviderResponseError(_MALFORMED_PAYLOAD)
 
-        return GenerateProviderResult(
-            output=_extract_output_text(body),
-            usage=_extract_usage(body),
-            provider_request_id=body.get("id") if isinstance(body.get("id"), str) else None,
-            cache_status=_cache_status(body),
-        )
+        result, response_error = _normalize_response(body)
+        if response_error is not None:
+            del body
+            del response
+            raise ProviderResponseError(response_error)
+
+        assert result is not None
+        return result
 
     async def _send_request(
         self,

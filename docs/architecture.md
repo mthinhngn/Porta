@@ -1,184 +1,140 @@
 # LLM Gateway Architecture
 
-## Phase 0 scope
+## Phase 1 scope
 
-Phase 0 defines contracts and durable boundaries without exposing chat
-completion execution or calling an upstream provider. It runs an ASGI
-application with `GET /health/live`, `GET /health/ready`, and generated OpenAPI
-documentation. The future chat API shape is a narrow, non-streaming subset of
-`POST /v1/chat/completions`.
+Phase 1 delivers one non-streaming OpenAI-backed vertical slice:
 
-Supported request concepts:
+- `GET /health/live`
+- `GET /health/ready`
+- `POST /v1/generate`
+- normalized provider usage and errors
+- exact `Decimal` cost calculation
+- durable request, attempt, pricing, and usage records
 
-- `model`
-- text-only `messages` using `developer`, `system`, `user`, `assistant`, and
-  `tool` roles
-- common sampling controls, stop sequences, seed, and token limits
-
-Supported response concepts:
-
-- `id`, `object="chat.completion"`, `created`, and `model`
-- `choices` containing a text message and finish reason
-- prompt, completion, and total token usage
-- OpenAI-style `{ "error": { "message", "type", "param", "code" } }`
-
-Streaming, multimodal content, tool definitions/calls, provider networking,
-chat endpoint execution, authentication, and routing policy are outside Phase
-0. `POST /v1/chat/completions` returns `404` until a later phase registers the
-route.
+Authentication, quotas, Redis caching, guardrails, retries, fallback, dynamic
+routing, and additional providers are outside Phase 1. The earlier
+chat-completion contracts remain transport-neutral foundations;
+`/v1/chat/completions` is not registered.
 
 ## System context
 
 ```mermaid
 flowchart LR
-    Client["OpenAI-compatible client"]
-    Transport["HTTP transport<br/>(health only in Phase 0)"]
-    Domain["Domain contracts"]
-    Service["Gateway orchestration<br/>(later phase)"]
-    Provider["Provider protocol"]
-    Upstream["LLM provider<br/>(later phase)"]
-    Persistence["Persistence models"]
-    Postgres[("PostgreSQL")]
+    Client["Gateway client"]
+    API["FastAPI transport"]
+    Service["Generation service"]
+    Ledger["SQLAlchemy ledger"]
+    Provider["OpenAI Responses adapter"]
+    OpenAI["OpenAI Responses API"]
+    Database[("PostgreSQL")]
 
-    Client -->|health now; chat later| Transport
-    Transport --> Domain
-    Domain --> Service
+    Client -->|POST /v1/generate| API
+    API --> Service
+    Service --> Ledger
+    Ledger --> Database
     Service --> Provider
-    Provider -.->|network adapter, later| Upstream
-    Service --> Persistence
-    Persistence --> Postgres
+    Provider -->|store=false| OpenAI
 ```
 
-Dashed flow indicates an upstream adapter that is intentionally not
-implemented in Phase 0.
+## Public contract
 
-## Phase 0 HTTP surface
+`GenerateRequest` accepts a gateway model alias, text input, sampling controls,
+and an output-token limit. It deliberately has no unauthenticated end-user
+identity field. Phase 2 may derive provider safety identifiers from authenticated
+actors without trusting a caller-supplied identity.
 
-- `GET /health/live` confirms the application process can serve requests.
-- `GET /health/ready` confirms application configuration loaded successfully.
-- `GET /openapi.json` exposes only registered Phase 0 routes.
-- `/v1` is reserved for versioned APIs, but no chat completion route is
-  registered.
+`GenerateResponse` returns:
+
+- gateway request ID
+- generated output
+- selected provider and gateway model
+- input, output, and total tokens
+- estimated cost and currency
+- routing reason
+- provider cache hit or miss
+- end-to-end latency
+
+Provider SDK and persistence types never cross the public HTTP boundary.
+
+## Request lifecycle
+
+1. FastAPI validates the request and binds a safe correlation ID.
+2. The service resolves the gateway model to the single configured
+   provider/model mapping. There is no routing policy or fallback selection.
+3. The ledger atomically creates the gateway request and first provider attempt
+   as `in_progress` with one shared start timestamp.
+4. The OpenAI adapter sends a Responses API request with `store=false`.
+5. The adapter normalizes output, provider request ID, token usage, cached input
+   tokens, and provider errors.
+6. On success, one transaction selects the effective pricing snapshot, computes
+   cost, inserts one usage record, and marks request and attempt succeeded.
+7. On provider failure, one transaction records a sanitized terminal error and
+   writes no usage.
+
+Successful completion is valid only for the matching in-progress request and
+attempt. A unique usage-to-attempt constraint prevents duplicate charging.
+
+## Usage and pricing
+
+Provider usage distinguishes:
+
+- total input tokens
+- cached input tokens
+- output tokens
+- total tokens
+
+Uncached input is `input_tokens - cached_input_tokens`. Cost is:
+
+```text
+(uncached_input * input_rate
+ + cached_input * cached_input_rate
+ + output * output_rate) / 1_000_000
+```
+
+Every term uses `Decimal`, and the final amount is rounded to ten decimal
+places. The usage row references the pricing snapshot used for the calculation.
+Phase 1 defaults for `gpt-4.1-mini` are USD 0.40 input, USD 0.10 cached input,
+and USD 1.60 output per million tokens.
 
 ## Package boundaries
 
 `llm_gateway.domain`
-: Transport-neutral Pydantic contracts for chat completion requests,
-responses, usage, and API errors. This package must not import HTTP,
-persistence, or concrete provider code.
+: Public, transport-neutral request, response, token, cost, and error models.
 
 `llm_gateway.providers`
-: Typed asynchronous provider boundary, provider error taxonomy, and an
-in-memory scripted test double. Concrete provider adapters may depend on the
-domain package but must not expose provider SDK types to callers.
+: Async provider protocols, normalized provider usage, safe error taxonomy, and
+the OpenAI Responses adapter.
 
 `llm_gateway.persistence`
-: SQLAlchemy 2 metadata and relational entities. ORM objects are persistence
-records, not API contracts, and must not be returned directly from transport
-code.
+: SQLAlchemy entities, configured mapping bootstrap, lifecycle transactions,
+pricing selection, and usage accounting.
 
-Future transport and application packages may depend on all three packages.
-Dependencies must not point back from these packages into transport or
-application composition.
+`llm_gateway.services`
+: Orchestration across configured model lookup, provider execution,
+persistence, and public response construction.
 
-## Request lifecycle
+`llm_gateway.api`
+: FastAPI route composition only; it does not calculate cost or interpret
+provider payloads.
 
-1. The transport layer accepts a non-streaming chat completion request.
-2. It validates the payload into `ChatCompletionRequest`.
-3. It accepts or generates a correlation ID and creates a distinct immutable
-   gateway request ID.
-4. Orchestration resolves the gateway model to an enabled provider model.
-5. A `gateway_requests` row records lifecycle state and a redacted payload only
-   when policy permits.
-6. Each provider invocation creates a `provider_attempts` row before work
-   begins, then records success or a normalized provider error.
-7. Successful provider output is normalized into `ChatCompletionResponse`.
-8. Token counts are recorded in `usage_records`; audit-safe request context is
-   recorded separately in `audit_metadata`.
-9. The transport returns either the normalized response or `ErrorResponse`.
-10. Completion timestamps are written even when the request fails.
+## Privacy boundary
 
-State changes should be monotonic:
+- Prompts and generated output are neither logged nor persisted.
+- OpenAI requests set `store=false`.
+- API keys come from environment injection and never enter database records.
+- Provider response bodies and exception strings are not returned to clients or
+stored as error messages.
+- Correlation IDs are validated opaque operational identifiers.
+- Provider request IDs are confidential operational metadata.
 
-`received -> in_progress -> succeeded | failed | cancelled`
+See [privacy.md](privacy.md) for the full handling policy.
 
-Provider attempts use:
+## Migration policy
 
-`pending -> in_progress -> succeeded | failed | timed_out | cancelled`
-
-## Correlation and identity
-
-- `gateway_request_id` is an internal UUID and primary trace key.
-- `correlation_id` is an opaque, bounded string propagated across logs,
-  persistence, and provider context. Generate one when a trusted inbound value
-  is absent.
-- Do not put prompts, user identifiers, API keys, email addresses, or model
-  output in correlation IDs.
-- Provider request IDs may be retained on provider attempts because they are
-  operational identifiers, but they must be treated as confidential metadata.
-- Logs should carry `correlation_id`, `gateway_request_id`, and
-  `provider_attempt_id` as structured fields.
-
-## Configuration policy
-
-Configuration implementation belongs to a later phase. Its contract is:
-
-- Environment variables or an external secret manager supply credentials.
-- Persistent provider records may contain a secret reference, never a secret
-  value.
-- Startup validates required settings and fails closed.
-- Provider timeouts, enabled state, model mappings, and privacy controls are
-  explicit configuration, not implicit SDK defaults.
-- Configuration values are never dumped wholesale to logs.
-- Environment-specific values do not enter source control.
-
-See [privacy.md](privacy.md) for data handling requirements.
-
-## Persistence design
-
-The initial schema represents:
-
-- `providers`: provider identity and non-secret operational configuration
-- `models`: gateway-to-provider model mapping and declared capabilities
-- `gateway_requests`: request lifecycle and normalized error outcome
-- `provider_attempts`: each attempted provider/model invocation
-- `usage_records`: token accounting associated with a request and attempt
-- `audit_metadata`: privacy-reduced actor and client context
-
-Composite constraints preserve cross-row identity:
-
-- an attempt's `(model_id, provider_id)` must identify one model mapping
-- usage linked to an attempt must use the same `gateway_request_id`
-- usage totals must equal prompt plus completion tokens
-
-UUID primary keys, timezone-aware timestamps, constrained string lengths, and
-JSON/JSONB-compatible columns keep the models PostgreSQL-ready while allowing
-lightweight local metadata construction. Privacy-sensitive columns carry
-database comments documenting allowed content and handling expectations.
-
-## Alembic conventions
-
-- Import `llm_gateway.persistence.Base.metadata` as Alembic target metadata.
-- Use the naming convention defined in `persistence/metadata.py`; do not
-  hand-name routine indexes or constraints unless the name communicates domain
-  meaning.
-- Generate a revision, inspect it, then edit it. Autogeneration is a draft.
-- Use additive, backwards-compatible migrations for rolling deployments.
-- Separate data backfills from long-running DDL when practical.
-- Never autogenerate destructive column or table removal without an explicit
-  ADR and rollback plan.
-- PostgreSQL enum types are avoided in the initial models so lifecycle values
-  can evolve through ordinary constrained application strings.
-- The initial Phase 0 revision creates all six persistence tables and their
-  integrity constraints. A clean `alembic upgrade head` must emit schema DDL.
-
-## Error boundary
-
-Provider adapters raise typed `ProviderError` subclasses. Orchestration maps
-those failures into stable gateway error types and decides whether retry or
-fallback is allowed. Provider exception strings and response bodies must not be
-sent directly to clients because they can contain credentials, prompts, or
-provider-specific internals.
+Alembic imports `llm_gateway.persistence.Base.metadata`. Published revisions are
+immutable; Phase 1 repairs use an additive revision for cached-input pricing,
+cached-token persistence, and usage uniqueness. A gate run must prove one head
+and render the complete PostgreSQL upgrade SQL from an empty database.
 
 ## Decisions
 

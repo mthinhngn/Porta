@@ -43,8 +43,12 @@ class Settings(BaseSettings):
     generate_gateway_model: str = Field(default="gateway-default", min_length=1, max_length=255)
     generate_upstream_model: str = Field(default="gpt-4.1-mini", min_length=1, max_length=255)
     generate_currency: str = Field(default="USD", min_length=3, max_length=3)
-    generate_input_cost_per_million: Decimal | None = Field(default=None, ge=0)
-    generate_output_cost_per_million: Decimal | None = Field(default=None, ge=0)
+    generate_input_cost_per_million: Decimal = Field(default=Decimal("0.4000000000"), ge=0)
+    generate_cached_input_cost_per_million: Decimal = Field(
+        default=Decimal("0.1000000000"),
+        ge=0,
+    )
+    generate_output_cost_per_million: Decimal = Field(default=Decimal("1.6000000000"), ge=0)
     live_smoke_enabled: bool = False
 
 

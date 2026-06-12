@@ -16,6 +16,7 @@ from llm_gateway.domain import (
     TokenUsage,
 )
 from llm_gateway.domain.chat import FinishReason
+from llm_gateway.providers import ProviderTokenUsage
 
 
 def test_chat_request_schema_accepts_supported_shape() -> None:
@@ -75,13 +76,55 @@ def test_generate_request_accepts_r1_shape() -> None:
         "temperature": 0.2,
         "top_p": None,
         "max_output_tokens": 64,
-        "user": None,
     }
+
+
+def test_generate_request_rejects_removed_user_field() -> None:
+    with pytest.raises(ValidationError):
+        GenerateRequest.model_validate(
+            {
+                "model": "gateway-default",
+                "input": "hello",
+                "user": "deprecated-user-id",
+            }
+        )
 
 
 def test_generate_token_usage_rejects_inconsistent_total() -> None:
     with pytest.raises(ValidationError):
         GenerateTokenUsage(input_tokens=2, output_tokens=3, total_tokens=4)
+
+
+def test_provider_token_usage_accepts_cached_input_breakdown() -> None:
+    usage = ProviderTokenUsage(
+        input_tokens=5,
+        cached_input_tokens=3,
+        output_tokens=2,
+        total_tokens=7,
+    )
+
+    assert usage.cached_input_tokens == 3
+
+
+@pytest.mark.parametrize("invalid_value", [True, 1.5, "1"])
+def test_provider_token_usage_rejects_non_integer_values(invalid_value: object) -> None:
+    with pytest.raises(ValueError, match="non-negative integers"):
+        ProviderTokenUsage(
+            input_tokens=invalid_value,  # type: ignore[arg-type]
+            cached_input_tokens=0,
+            output_tokens=1,
+            total_tokens=1,
+        )
+
+
+def test_provider_token_usage_rejects_cached_tokens_above_input_tokens() -> None:
+    with pytest.raises(ValueError, match="must not exceed"):
+        ProviderTokenUsage(
+            input_tokens=2,
+            cached_input_tokens=3,
+            output_tokens=1,
+            total_tokens=3,
+        )
 
 
 def test_chat_request_accepts_explicit_non_streaming_mode() -> None:

@@ -67,6 +67,17 @@ def _error_from_provider(error: ProviderError) -> ApiError:
     )
 
 
+def _error_for_persistence(error: ProviderError) -> ProviderError:
+    if error.code == "gateway_persistence_error":
+        return error
+    public_error = _error_from_provider(error)
+    return type(error)(
+        public_error.message,
+        code=error.code,
+        status_code=error.status_code,
+    )
+
+
 class GenerationService:
     """Coordinate provider execution with persistence and pricing."""
 
@@ -104,19 +115,12 @@ class GenerationService:
                 code="model_not_found",
             )
 
-        request_id = self._ledger.create_gateway_request(
-            correlation_id=correlation_id,
-            requested_model=request.model,
-        )
-        attempt_id = self._ledger.create_provider_attempt(
-            gateway_request_id=request_id,
-            route=route,
-        )
         started_at = perf_counter()
         started_at_wall = datetime.now(UTC)
-        self._ledger.start_generation(
-            request_id=request_id,
-            attempt_id=attempt_id,
+        request_id, attempt_id = self._ledger.begin_generation(
+            correlation_id=correlation_id,
+            requested_model=request.model,
+            route=route,
             started_at=started_at_wall,
         )
 
@@ -255,14 +259,20 @@ class GenerationService:
         attempt_status: str,
     ) -> None:
         latency_ms = round((perf_counter() - latency_started_at) * 1000)
-        self._ledger.fail_generation(
-            request_id=request_id,
-            attempt_id=attempt_id,
-            attempt_status=attempt_status,
-            latency_ms=latency_ms,
-            error=error,
-            completed_at=datetime.now(UTC),
-        )
+        persisted_error = _error_for_persistence(error)
+        try:
+            self._ledger.fail_generation(
+                request_id=request_id,
+                attempt_id=attempt_id,
+                attempt_status=attempt_status,
+                latency_ms=latency_ms,
+                error=persisted_error,
+                completed_at=datetime.now(UTC),
+            )
+        except Exception:
+            # Preserve the sanitized public failure if persistence also fails or
+            # another worker already made the generation terminal.
+            return
 
     def _fail_with_api_error(
         self,

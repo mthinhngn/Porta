@@ -16,6 +16,7 @@ from llm_gateway.providers.protocol import (
     GenerateProviderContext,
     GenerateProviderResult,
     ProviderContext,
+    ProviderTokenUsage,
 )
 from llm_gateway.providers.testing import ProviderCall, ScriptedProvider
 
@@ -33,6 +34,7 @@ __all__ = [
     "ProviderRateLimitError",
     "ProviderResponseError",
     "ProviderTimeoutError",
+    "ProviderTokenUsage",
     "ProviderUnavailableError",
     "ScriptedProvider",
 ]

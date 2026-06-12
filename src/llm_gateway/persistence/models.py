@@ -214,6 +214,10 @@ class PricingSnapshot(Base):
             name="input_cost_per_million_non_negative",
         ),
         CheckConstraint(
+            "cached_input_cost_per_million >= 0",
+            name="cached_input_cost_per_million_non_negative",
+        ),
+        CheckConstraint(
             "output_cost_per_million >= 0",
             name="output_cost_per_million_non_negative",
         ),
@@ -232,6 +236,10 @@ class PricingSnapshot(Base):
     )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     input_cost_per_million: Mapped[Decimal] = mapped_column(Numeric(20, 10), nullable=False)
+    cached_input_cost_per_million: Mapped[Decimal] = mapped_column(
+        Numeric(20, 10),
+        nullable=False,
+    )
     output_cost_per_million: Mapped[Decimal] = mapped_column(Numeric(20, 10), nullable=False)
     effective_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -414,6 +422,14 @@ class UsageRecord(Base):
         ),
         CheckConstraint("prompt_tokens >= 0", name="prompt_tokens_non_negative"),
         CheckConstraint(
+            "cached_input_tokens >= 0",
+            name="cached_input_tokens_non_negative",
+        ),
+        CheckConstraint(
+            "cached_input_tokens <= prompt_tokens",
+            name="cached_input_tokens_not_greater_than_prompt",
+        ),
+        CheckConstraint(
             "completion_tokens >= 0",
             name="completion_tokens_non_negative",
         ),
@@ -425,6 +441,10 @@ class UsageRecord(Base):
         CheckConstraint(
             "estimated_cost IS NULL OR estimated_cost >= 0",
             name="estimated_cost_non_negative",
+        ),
+        UniqueConstraint(
+            "provider_attempt_id",
+            name="uq_usage_records_provider_attempt_id",
         ),
     )
 
@@ -442,6 +462,12 @@ class UsageRecord(Base):
         index=True,
     )
     prompt_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    cached_input_tokens: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
     completion_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     total_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     estimated_cost: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))

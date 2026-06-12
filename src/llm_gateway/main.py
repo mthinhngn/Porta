@@ -78,20 +78,16 @@ def _build_generation_service(
         name=settings.generate_provider_name,
     )
     ledger = SqlAlchemyGatewayLedger(session_factory)
-    bootstrap: RouteBootstrap | None = None
-    if (
-        settings.generate_input_cost_per_million is not None
-        and settings.generate_output_cost_per_million is not None
-    ):
-        bootstrap = RouteBootstrap(
-            provider_name=settings.generate_provider_name,
-            provider_adapter=settings.generate_provider_adapter,
-            gateway_model=settings.generate_gateway_model,
-            upstream_model=settings.generate_upstream_model,
-            currency=settings.generate_currency,
-            input_cost_per_million=settings.generate_input_cost_per_million,
-            output_cost_per_million=settings.generate_output_cost_per_million,
-        )
+    bootstrap = RouteBootstrap(
+        provider_name=settings.generate_provider_name,
+        provider_adapter=settings.generate_provider_adapter,
+        gateway_model=settings.generate_gateway_model,
+        upstream_model=settings.generate_upstream_model,
+        currency=settings.generate_currency,
+        input_cost_per_million=settings.generate_input_cost_per_million,
+        cached_input_cost_per_million=settings.generate_cached_input_cost_per_million,
+        output_cost_per_million=settings.generate_output_cost_per_million,
+    )
     return GenerationService(
         provider_registry={settings.generate_provider_name: provider},
         ledger=ledger,

@@ -10,6 +10,7 @@ contracts, security, or operations.
 - [0003: Persist lifecycle records separately](0003-persistence-model.md)
 - [0004: Minimize and redact content by default](0004-privacy-by-default.md)
 - [0005: Enforce cross-record persistence integrity](0005-cross-record-integrity.md)
+- [0006: Start generation records atomically](0006-atomic-generation-ledger.md)
 
 ## Format
 

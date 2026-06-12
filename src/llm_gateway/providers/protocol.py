@@ -11,7 +11,6 @@ from llm_gateway.domain import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     GenerateRequest,
-    GenerateTokenUsage,
 )
 
 
@@ -72,9 +71,33 @@ class GenerateProviderContext:
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderTokenUsage:
+    input_tokens: int
+    cached_input_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+    def __post_init__(self) -> None:
+        values = (
+            self.input_tokens,
+            self.cached_input_tokens,
+            self.output_tokens,
+            self.total_tokens,
+        )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values
+        ):
+            raise ValueError("provider token usage values must be non-negative integers")
+        if self.cached_input_tokens > self.input_tokens:
+            raise ValueError("cached_input_tokens must not exceed input_tokens")
+        if self.total_tokens != self.input_tokens + self.output_tokens:
+            raise ValueError("total_tokens must equal input_tokens + output_tokens")
+
+
+@dataclass(frozen=True, slots=True)
 class GenerateProviderResult:
     output: str
-    usage: GenerateTokenUsage
+    usage: ProviderTokenUsage
     provider_request_id: str | None = None
     cache_status: str = "miss"
 

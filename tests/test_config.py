@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -54,3 +55,12 @@ def test_get_settings_caches_loaded_configuration(monkeypatch: pytest.MonkeyPatc
 
     get_settings.cache_clear()
     assert get_settings().app_name == "second-name"
+
+
+def test_default_generation_pricing_matches_configured_phase_one_model() -> None:
+    settings = Settings()
+
+    assert settings.generate_upstream_model == "gpt-4.1-mini"
+    assert settings.generate_input_cost_per_million == Decimal("0.4000000000")
+    assert settings.generate_cached_input_cost_per_million == Decimal("0.1000000000")
+    assert settings.generate_output_cost_per_million == Decimal("1.6000000000")

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import math
 from dataclasses import FrozenInstanceError
 from typing import Any, cast
@@ -14,7 +15,6 @@ from llm_gateway.domain import (
     ChatMessage,
     ChatRole,
     GenerateRequest,
-    GenerateTokenUsage,
     TokenUsage,
 )
 from llm_gateway.providers import (
@@ -28,6 +28,7 @@ from llm_gateway.providers import (
     ProviderRateLimitError,
     ProviderResponseError,
     ProviderTimeoutError,
+    ProviderTokenUsage,
     ProviderUnavailableError,
     ScriptedProvider,
 )
@@ -189,14 +190,17 @@ def test_generate_provider_context_requires_positive_finite_timeout() -> None:
 
 def test_openai_responses_adapter_normalizes_success_and_sets_store_false() -> None:
     seen_payload: dict[str, Any] = {}
+    seen_headers: httpx.Headers | None = None
 
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal seen_payload
+        nonlocal seen_headers, seen_payload
         seen_payload = cast(dict[str, Any], json.loads(request.content.decode("utf-8")))
+        seen_headers = request.headers
         return httpx.Response(
             status_code=200,
             json={
                 "id": "resp_123",
+                "status": "completed",
                 "output": [
                     {
                         "type": "message",
@@ -214,8 +218,6 @@ def test_openai_responses_adapter_normalizes_success_and_sets_store_false() -> N
             },
         )
 
-    import json
-
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     provider = OpenAIResponsesProvider(
         api_key="test-key",
@@ -228,10 +230,54 @@ def test_openai_responses_adapter_normalizes_success_and_sets_store_false() -> N
     assert isinstance(provider, GenerateProvider)
     assert result.output == "hello world"
     assert result.provider_request_id == "resp_123"
-    assert result.usage == GenerateTokenUsage(input_tokens=2, output_tokens=3, total_tokens=5)
+    assert result.usage == ProviderTokenUsage(
+        input_tokens=2,
+        cached_input_tokens=1,
+        output_tokens=3,
+        total_tokens=5,
+    )
     assert result.cache_status == "hit"
     assert seen_payload["store"] is False
     assert seen_payload["model"] == "gpt-4.1-mini"
+    assert "user" not in seen_payload
+    assert seen_headers is not None
+    assert "OpenAI-Beta" not in seen_headers
+
+    asyncio.run(client.aclose())
+
+
+def test_openai_responses_adapter_defaults_absent_cache_details_to_miss() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=200,
+            json={
+                "id": "resp_123",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "hello"}],
+                    }
+                ],
+                "usage": {
+                    "input_tokens": 2,
+                    "output_tokens": 3,
+                    "total_tokens": 5,
+                },
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAIResponsesProvider(
+        api_key="test-key",
+        base_url="https://api.openai.com/v1",
+        client=client,
+    )
+
+    result = asyncio.run(provider.generate(generate_request(), generate_context()))
+
+    assert result.usage.cached_input_tokens == 0
+    assert result.cache_status == "miss"
 
     asyncio.run(client.aclose())
 
@@ -288,7 +334,10 @@ def test_openai_responses_adapter_maps_http_statuses(
 
 def test_openai_responses_adapter_rejects_malformed_payload() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(status_code=200, json={"id": "resp_123", "usage": {}})
+        return httpx.Response(
+            status_code=200,
+            json={"id": "resp_123", "status": "completed", "usage": {}},
+        )
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     provider = OpenAIResponsesProvider(
@@ -311,6 +360,36 @@ def test_openai_responses_adapter_rejects_malformed_payload() -> None:
         {"input_tokens": -1, "output_tokens": 2, "total_tokens": 1},
         {"output_tokens": 2, "total_tokens": 2},
         {"input_tokens": 1, "output_tokens": 2, "total_tokens": 99},
+        {
+            "input_tokens": 1,
+            "output_tokens": 2,
+            "total_tokens": 3,
+            "input_tokens_details": None,
+        },
+        {
+            "input_tokens": 1,
+            "output_tokens": 2,
+            "total_tokens": 3,
+            "input_tokens_details": {},
+        },
+        {
+            "input_tokens": 1,
+            "output_tokens": 2,
+            "total_tokens": 3,
+            "input_tokens_details": {"cached_tokens": True},
+        },
+        {
+            "input_tokens": 1,
+            "output_tokens": 2,
+            "total_tokens": 3,
+            "input_tokens_details": {"cached_tokens": -1},
+        },
+        {
+            "input_tokens": 1,
+            "output_tokens": 2,
+            "total_tokens": 3,
+            "input_tokens_details": {"cached_tokens": 2},
+        },
     ],
 )
 def test_openai_responses_adapter_rejects_malformed_usage(usage: dict[str, object]) -> None:
@@ -319,6 +398,7 @@ def test_openai_responses_adapter_rejects_malformed_usage(usage: dict[str, objec
             status_code=200,
             json={
                 "id": "resp_123",
+                "status": "completed",
                 "output": [
                     {
                         "type": "message",
@@ -338,5 +418,73 @@ def test_openai_responses_adapter_rejects_malformed_usage(usage: dict[str, objec
 
     with pytest.raises(ProviderResponseError):
         asyncio.run(provider.generate(generate_request(), generate_context()))
+
+    asyncio.run(client.aclose())
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_message"),
+    [
+        (
+            {
+                "id": "resp_123",
+                "status": "incomplete",
+                "incomplete_details": {"reason": "private-secret"},
+                "output": [],
+            },
+            "Provider response was not completed.",
+        ),
+        (
+            {
+                "id": "resp_123",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "refusal",
+                                "refusal": "authorization=Bearer private-secret",
+                            }
+                        ],
+                    }
+                ],
+            },
+            "Provider response contained a refusal.",
+        ),
+        (
+            {
+                "id": "resp_123",
+                "status": "completed",
+                "output": [],
+                "provider_debug": "private-secret",
+            },
+            "Provider response contained no text output.",
+        ),
+    ],
+)
+def test_openai_responses_adapter_rejects_unusable_output_without_retaining_body(
+    body: dict[str, object],
+    expected_message: str,
+) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=200, json=body)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAIResponsesProvider(
+        api_key="test-key",
+        base_url="https://api.openai.com/v1",
+        client=client,
+    )
+
+    with pytest.raises(ProviderResponseError) as exc_info:
+        asyncio.run(provider.generate(generate_request(), generate_context()))
+
+    error = exc_info.value
+    assert error.message == expected_message
+    assert dict(error.details) == {}
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert "private-secret" not in repr(vars(error))
 
     asyncio.run(client.aclose())

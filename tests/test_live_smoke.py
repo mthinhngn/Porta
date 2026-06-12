@@ -13,31 +13,65 @@ from llm_gateway.core.config import Settings
 from llm_gateway.main import create_app
 from llm_gateway.persistence import Base, GatewayRequest, ProviderAttempt, UsageRecord
 
+LIVE_COST_LIMIT = Decimal("0.01")
+SMOKE_MODEL = "gpt-4.1-mini"
+SMOKE_PROMPT = "Respond with exactly: smoke-ok"
+SMOKE_MAX_OUTPUT_TOKENS = 16
+SMOKE_INPUT_TOKEN_BUDGET = 256
+SMOKE_INPUT_COST_PER_MILLION = Decimal("0.4000000000")
+SMOKE_CACHED_INPUT_COST_PER_MILLION = Decimal("0.1000000000")
+SMOKE_OUTPUT_COST_PER_MILLION = Decimal("1.6000000000")
+TOKENS_PER_MILLION = Decimal("1000000")
+
 pytestmark = pytest.mark.skipif(
     os.getenv("LLM_GATEWAY_LIVE_SMOKE") != "1",
     reason="set LLM_GATEWAY_LIVE_SMOKE=1 to run the live OpenAI smoke test",
 )
 
 
+def _live_settings(*, database_url: str, api_key: str) -> Settings:
+    return Settings(
+        environment="test",
+        database_url=database_url,
+        openai_api_key=api_key,
+        generate_gateway_model=os.getenv(
+            "LLM_GATEWAY_SMOKE_GATEWAY_MODEL",
+            "gateway-default",
+        ),
+        generate_upstream_model=SMOKE_MODEL,
+        generate_input_cost_per_million=SMOKE_INPUT_COST_PER_MILLION,
+        generate_cached_input_cost_per_million=SMOKE_CACHED_INPUT_COST_PER_MILLION,
+        generate_output_cost_per_million=SMOKE_OUTPUT_COST_PER_MILLION,
+        live_smoke_enabled=True,
+    )
+
+
+def _smoke_cost_ceiling() -> Decimal:
+    maximum_input_rate = max(
+        SMOKE_INPUT_COST_PER_MILLION,
+        SMOKE_CACHED_INPUT_COST_PER_MILLION,
+    )
+    return (
+        Decimal(SMOKE_INPUT_TOKEN_BUDGET) * maximum_input_rate
+        + Decimal(SMOKE_MAX_OUTPUT_TOKENS) * SMOKE_OUTPUT_COST_PER_MILLION
+    ) / TOKENS_PER_MILLION
+
+
 def test_live_generate_smoke(tmp_path: Path) -> None:
+    assert _smoke_cost_ceiling() < LIVE_COST_LIMIT
+
     database_path = tmp_path / "live-smoke.sqlite3"
     engine = create_engine(f"sqlite:///{database_path}")
     Base.metadata.create_all(engine)
     sessions = sessionmaker(bind=engine, expire_on_commit=False)
 
-    settings = Settings(
-        environment="test",
+    dotenv_settings = Settings(_env_file=".env", _env_file_encoding="utf-8")
+    assert dotenv_settings.openai_api_key is not None, (
+        "set LLM_GATEWAY_OPENAI_API_KEY in the ignored .env file"
+    )
+    settings = _live_settings(
         database_url=f"sqlite:///{database_path}",
-        openai_api_key=os.environ["OPENAI_API_KEY"],
-        generate_gateway_model=os.getenv("LLM_GATEWAY_SMOKE_GATEWAY_MODEL", "gateway-default"),
-        generate_upstream_model=os.getenv("LLM_GATEWAY_SMOKE_MODEL", "gpt-4.1-mini"),
-        generate_input_cost_per_million=Decimal(
-            os.getenv("LLM_GATEWAY_SMOKE_INPUT_COST_PER_MILLION", "0.15")
-        ),
-        generate_output_cost_per_million=Decimal(
-            os.getenv("LLM_GATEWAY_SMOKE_OUTPUT_COST_PER_MILLION", "0.6")
-        ),
-        live_smoke_enabled=True,
+        api_key=dotenv_settings.openai_api_key,
     )
     app = create_app(settings, session_factory=sessions)
 
@@ -46,8 +80,8 @@ def test_live_generate_smoke(tmp_path: Path) -> None:
             "/v1/generate",
             json={
                 "model": settings.generate_gateway_model,
-                "input": "Respond with exactly: smoke-ok",
-                "max_output_tokens": 16,
+                "input": SMOKE_PROMPT,
+                "max_output_tokens": SMOKE_MAX_OUTPUT_TOKENS,
             },
         )
 
@@ -62,6 +96,12 @@ def test_live_generate_smoke(tmp_path: Path) -> None:
     assert body["routing_reason"] == "configured_single_path"
     assert body["cache_status"] in {"miss", "hit"}
     assert body["latency_ms"] >= 0
+    assert body["tokens"]["input_tokens"] <= SMOKE_INPUT_TOKEN_BUDGET
+    assert body["tokens"]["output_tokens"] <= SMOKE_MAX_OUTPUT_TOKENS
+    estimated_cost = Decimal(body["cost"]["amount"])
+    assert estimated_cost <= _smoke_cost_ceiling()
+    assert estimated_cost < LIVE_COST_LIMIT
+    print(f"live smoke estimated cost: USD {estimated_cost:.10f}")
 
     with sessions() as session:
         assert session.query(GatewayRequest).count() == 1
@@ -75,19 +115,9 @@ def test_live_generate_auth_failure_probe(tmp_path: Path) -> None:
     Base.metadata.create_all(engine)
     sessions = sessionmaker(bind=engine, expire_on_commit=False)
 
-    settings = Settings(
-        environment="test",
+    settings = _live_settings(
         database_url=f"sqlite:///{database_path}",
-        openai_api_key="invalid-phase1-smoke-key",
-        generate_gateway_model=os.getenv("LLM_GATEWAY_SMOKE_GATEWAY_MODEL", "gateway-default"),
-        generate_upstream_model=os.getenv("LLM_GATEWAY_SMOKE_MODEL", "gpt-4.1-mini"),
-        generate_input_cost_per_million=Decimal(
-            os.getenv("LLM_GATEWAY_SMOKE_INPUT_COST_PER_MILLION", "0.15")
-        ),
-        generate_output_cost_per_million=Decimal(
-            os.getenv("LLM_GATEWAY_SMOKE_OUTPUT_COST_PER_MILLION", "0.6")
-        ),
-        live_smoke_enabled=True,
+        api_key="invalid-phase1-smoke-key",
     )
     app = create_app(settings, session_factory=sessions)
 
@@ -97,7 +127,7 @@ def test_live_generate_auth_failure_probe(tmp_path: Path) -> None:
             json={
                 "model": settings.generate_gateway_model,
                 "input": "Respond with exactly: smoke-auth-failure",
-                "max_output_tokens": 16,
+                "max_output_tokens": SMOKE_MAX_OUTPUT_TOKENS,
             },
         )
 
