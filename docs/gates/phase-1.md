@@ -140,10 +140,12 @@ key sentinels from all persisted table values.
 - Invalid-key live failure result: pass
 - Actual recorded gateway cost: USD 0.0000116000
 
-The first paid attempt received an OpenAI HTTP 500 and was safely returned as a
-sanitized gateway 503 with no usage record. One bounded retry succeeded with
-OpenAI HTTP 200. The combined attempted request ceilings remained far below the
-approved USD 0.01 maximum.
+The main agent's first paid gate invocation received an OpenAI HTTP 500 and was
+safely returned as a sanitized gateway 503 with no usage record. The main agent
+then manually reran the same capped smoke command once; that separate invocation
+received OpenAI HTTP 200. The gateway itself does not retry in Phase 1. The
+combined attempted request ceilings remained far below the approved USD 0.01
+maximum.
 
 ## Finalization rule
 
