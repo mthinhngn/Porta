@@ -17,7 +17,7 @@ def _alembic_config() -> Config:
 def test_initial_revision_is_the_single_head() -> None:
     scripts = ScriptDirectory.from_config(_alembic_config())
 
-    assert scripts.get_heads() == ["20260611_0001"]
+    assert scripts.get_heads() == ["20260611_0002"]
 
 
 def test_upgrade_head_emits_phase_zero_schema_ddl() -> None:
@@ -32,7 +32,12 @@ def test_upgrade_head_emits_phase_zero_schema_ddl() -> None:
         "gateway_requests",
         "models",
         "audit_metadata",
+        "pricing_snapshots",
         "provider_attempts",
         "usage_records",
     ):
         assert f"CREATE TABLE {table_name}" in ddl
+
+    assert "pricing_snapshot_id" in ddl
+    assert "fk_pricing_snapshots_model_provider" in ddl
+    assert "fk_usage_records_pricing_snapshot_id_pricing_snapshots" in ddl

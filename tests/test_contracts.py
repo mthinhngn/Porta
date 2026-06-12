@@ -9,6 +9,10 @@ from llm_gateway.domain import (
     ChatRole,
     ErrorDetail,
     ErrorResponse,
+    GenerateCost,
+    GenerateRequest,
+    GenerateResponse,
+    GenerateTokenUsage,
     TokenUsage,
 )
 from llm_gateway.domain.chat import FinishReason
@@ -55,6 +59,29 @@ def test_chat_request_schema_rejects_unknown_fields() -> None:
                 "unsupported": True,
             }
         )
+
+
+def test_generate_request_accepts_r1_shape() -> None:
+    request = GenerateRequest(
+        model="gateway-default",
+        input="hello",
+        temperature=0.2,
+        max_output_tokens=64,
+    )
+
+    assert request.model_dump() == {
+        "model": "gateway-default",
+        "input": "hello",
+        "temperature": 0.2,
+        "top_p": None,
+        "max_output_tokens": 64,
+        "user": None,
+    }
+
+
+def test_generate_token_usage_rejects_inconsistent_total() -> None:
+    with pytest.raises(ValidationError):
+        GenerateTokenUsage(input_tokens=2, output_tokens=3, total_tokens=4)
 
 
 def test_chat_request_accepts_explicit_non_streaming_mode() -> None:
@@ -140,6 +167,36 @@ def test_chat_response_and_error_schemas() -> None:
             "param": "model",
             "code": "validation_error",
         }
+    }
+
+
+def test_generate_response_schema() -> None:
+    response = GenerateResponse(
+        request_id="6fd88233-f8c6-4b08-b430-d9dfbaf3ba24",
+        output="hello",
+        provider="openai",
+        model="gateway-default",
+        tokens=GenerateTokenUsage(input_tokens=2, output_tokens=3, total_tokens=5),
+        cost=GenerateCost(amount="0.0000060000", currency="USD"),
+        routing_reason="configured_single_path",
+        cache_status="miss",
+        latency_ms=42,
+    )
+
+    assert response.model_dump(mode="json") == {
+        "request_id": "6fd88233-f8c6-4b08-b430-d9dfbaf3ba24",
+        "output": "hello",
+        "provider": "openai",
+        "model": "gateway-default",
+        "tokens": {
+            "input_tokens": 2,
+            "output_tokens": 3,
+            "total_tokens": 5,
+        },
+        "cost": {"amount": "0.0000060000", "currency": "USD"},
+        "routing_reason": "configured_single_path",
+        "cache_status": "miss",
+        "latency_ms": 42,
     }
 
 

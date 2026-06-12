@@ -9,11 +9,22 @@ from llm_gateway.providers.errors import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-from llm_gateway.providers.protocol import ChatCompletionProvider, ProviderContext
+from llm_gateway.providers.openai_responses import OpenAIResponsesProvider
+from llm_gateway.providers.protocol import (
+    ChatCompletionProvider,
+    GenerateProvider,
+    GenerateProviderContext,
+    GenerateProviderResult,
+    ProviderContext,
+)
 from llm_gateway.providers.testing import ProviderCall, ScriptedProvider
 
 __all__ = [
     "ChatCompletionProvider",
+    "GenerateProvider",
+    "GenerateProviderContext",
+    "GenerateProviderResult",
+    "OpenAIResponsesProvider",
     "ProviderAuthenticationError",
     "ProviderBadRequestError",
     "ProviderCall",

@@ -7,7 +7,12 @@ from types import MappingProxyType
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
-from llm_gateway.domain import ChatCompletionRequest, ChatCompletionResponse
+from llm_gateway.domain import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    GenerateRequest,
+    GenerateTokenUsage,
+)
 
 
 def _freeze_metadata(value: Any) -> Any:
@@ -48,4 +53,43 @@ class ChatCompletionProvider(Protocol):
         context: ProviderContext,
     ) -> ChatCompletionResponse:
         """Return a normalized completion or raise ProviderError."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class GenerateProviderContext:
+    gateway_request_id: UUID
+    correlation_id: str
+    provider_name: str
+    model_name: str
+    timeout_seconds: float
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive and finite")
+        object.__setattr__(self, "metadata", _freeze_metadata(self.metadata))
+
+
+@dataclass(frozen=True, slots=True)
+class GenerateProviderResult:
+    output: str
+    usage: GenerateTokenUsage
+    provider_request_id: str | None = None
+    cache_status: str = "miss"
+
+
+@runtime_checkable
+class GenerateProvider(Protocol):
+    @property
+    def name(self) -> str:
+        """Stable configured provider name."""
+        ...
+
+    async def generate(
+        self,
+        request: GenerateRequest,
+        context: GenerateProviderContext,
+    ) -> GenerateProviderResult:
+        """Return a normalized generation result or raise ProviderError."""
         ...

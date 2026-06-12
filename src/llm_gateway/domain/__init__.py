@@ -9,6 +9,12 @@ from llm_gateway.domain.chat import (
     TokenUsage,
 )
 from llm_gateway.domain.errors import ErrorDetail, ErrorResponse
+from llm_gateway.domain.generate import (
+    GenerateCost,
+    GenerateRequest,
+    GenerateResponse,
+    GenerateTokenUsage,
+)
 
 __all__ = [
     "ChatCompletionChoice",
@@ -18,5 +24,9 @@ __all__ = [
     "ChatRole",
     "ErrorDetail",
     "ErrorResponse",
+    "GenerateCost",
+    "GenerateRequest",
+    "GenerateResponse",
+    "GenerateTokenUsage",
     "TokenUsage",
 ]

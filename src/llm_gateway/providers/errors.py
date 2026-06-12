@@ -6,6 +6,7 @@ from types import MappingProxyType
 from typing import Any
 
 SAFE_DETAIL_KEYS = frozenset({"error_code", "error_type", "retry_after", "status_code"})
+SAFE_CODE_PATTERN = re.compile(r"^[a-z0-9_]{1,64}$")
 SENSITIVE_VALUE_PATTERN = re.compile(
     r"(?i)(?:authorization|bearer\s+\S+|api[_-]?key|credential|password|"
     r"prompt|completion|secret|token|sk-(?:ant-)?[A-Za-z0-9_-]{8,})"
@@ -32,6 +33,15 @@ def _safe_details(details: Mapping[str, Any] | None) -> Mapping[str, Any]:
     return MappingProxyType(safe)
 
 
+def _safe_code(code: str | None, *, default: str) -> str:
+    if code is None:
+        return default
+    normalized = code.strip().lower()
+    if SAFE_CODE_PATTERN.fullmatch(normalized):
+        return normalized
+    return default
+
+
 class ProviderError(Exception):
     """Base provider failure safe for orchestration-level handling."""
 
@@ -49,7 +59,7 @@ class ProviderError(Exception):
     ) -> None:
         self.message = _safe_message(message)
         super().__init__(self.message)
-        self.code = code or self.default_code
+        self.code = _safe_code(code, default=self.default_code)
         self.status_code = status_code
         self.provider_request_id = provider_request_id
         self.details = _safe_details(details)

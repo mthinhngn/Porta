@@ -133,6 +133,11 @@ class Provider(TimestampMixin, Base):
         primaryjoin=lambda: Provider.id == foreign(ProviderAttempt.provider_id),
         viewonly=True,
     )
+    pricing_snapshots: Mapped[list[PricingSnapshot]] = relationship(
+        back_populates="provider",
+        cascade="all, delete-orphan",
+        overlaps="model,pricing_snapshots",
+    )
 
     @validates("secret_ref")
     def validate_secret_ref(self, _key: str, value: str | None) -> str | None:
@@ -177,10 +182,77 @@ class Model(TimestampMixin, Base):
         back_populates="model",
         foreign_keys="[ProviderAttempt.model_id, ProviderAttempt.provider_id]",
     )
+    pricing_snapshots: Mapped[list[PricingSnapshot]] = relationship(
+        back_populates="model",
+        cascade="all, delete-orphan",
+        foreign_keys="[PricingSnapshot.model_id, PricingSnapshot.provider_id]",
+        overlaps="provider,pricing_snapshots",
+    )
 
     @validates("capabilities")
     def validate_capabilities(self, _key: str, value: dict[str, Any]) -> dict[str, Any]:
         return _assert_privacy_safe(value, field_name="capabilities")
+
+
+class PricingSnapshot(Base):
+    __tablename__ = "pricing_snapshots"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["model_id", "provider_id"],
+            ["models.id", "models.provider_id"],
+            name="fk_pricing_snapshots_model_provider",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "provider_id",
+            "model_id",
+            "effective_at",
+            name="uq_pricing_snapshots_provider_model_effective_at",
+        ),
+        CheckConstraint(
+            "input_cost_per_million >= 0",
+            name="input_cost_per_million_non_negative",
+        ),
+        CheckConstraint(
+            "output_cost_per_million >= 0",
+            name="output_cost_per_million_non_negative",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    provider_id: Mapped[UUID] = mapped_column(
+        ForeignKey("providers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    model_id: Mapped[UUID] = mapped_column(
+        ForeignKey("models.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    input_cost_per_million: Mapped[Decimal] = mapped_column(Numeric(20, 10), nullable=False)
+    output_cost_per_million: Mapped[Decimal] = mapped_column(Numeric(20, 10), nullable=False)
+    effective_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    provider: Mapped[Provider] = relationship(
+        back_populates="pricing_snapshots",
+        overlaps="model,pricing_snapshots",
+    )
+    model: Mapped[Model] = relationship(
+        back_populates="pricing_snapshots",
+        foreign_keys=[model_id, provider_id],
+        overlaps="provider,pricing_snapshots",
+    )
 
 
 class GatewayRequest(TimestampMixin, Base):
@@ -362,6 +434,10 @@ class UsageRecord(Base):
         nullable=False,
         index=True,
     )
+    pricing_snapshot_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("pricing_snapshots.id", ondelete="RESTRICT"),
+        index=True,
+    )
     provider_attempt_id: Mapped[UUID | None] = mapped_column(
         index=True,
     )
@@ -385,6 +461,7 @@ class UsageRecord(Base):
         foreign_keys=[provider_attempt_id, gateway_request_id],
         overlaps="gateway_request,usage_records",
     )
+    pricing_snapshot: Mapped[PricingSnapshot | None] = relationship()
 
 
 class AuditMetadata(Base):

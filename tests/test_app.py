@@ -23,8 +23,8 @@ def test_settings_do_not_require_database_or_provider_credentials() -> None:
     settings = Settings(environment="test")
 
     assert settings.environment == "test"
-    assert not hasattr(settings, "database_url")
-    assert not hasattr(settings, "provider_api_key")
+    assert settings.database_url is None
+    assert settings.openai_api_key is None
 
 
 def test_settings_reject_invalid_correlation_header() -> None:
@@ -40,3 +40,13 @@ def test_chat_completion_endpoint_is_not_implemented(client: TestClient) -> None
 
     assert response.status_code == 404
     assert response.json()["error"]["type"] == "invalid_request_error"
+
+
+def test_generate_endpoint_requires_configured_service(client: TestClient) -> None:
+    response = client.post(
+        "/v1/generate",
+        json={"model": "test", "input": "hello"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "service_unavailable"
