@@ -12,7 +12,8 @@ release evidence and cannot change this verdict.
 
 ## Candidate
 
-- Candidate SHA A: pending
+- Failed candidate SHA A: `1167eb61636d964ff0cb8f75186a2fa159b06c64`
+- Repaired candidate SHA: pending
 - Final evidence SHA B: pending
 - Branch: `main`
 - Remote: private `mthinhngn/llm-gateway`
@@ -53,6 +54,8 @@ must be rerun by the main agent against the final evidence commit.
 | Owned focused tests | verified, non-release | `15 passed, 2 skipped`; skips are both opt-in live network tests |
 | Owned Python Ruff lint | verified, non-release | `uv run ruff check tests/test_generate_api.py tests/test_migrations.py tests/test_live_smoke.py` |
 | Owned Python Ruff format | verified, non-release | `uv run ruff format --check tests/test_generate_api.py tests/test_migrations.py tests/test_live_smoke.py` |
+| Safe server construction | verified, non-release | packaged entry point sets `access_log=False`; reload command documents `--no-access-log` |
+| Runtime PostgreSQL driver | verified, non-release | psycopg engine construction and pre-start rejection of runtime asyncpg URLs |
 | Alembic single head | verified, non-release | `20260612_0003 (head)` |
 | PostgreSQL offline SQL | verified, non-release | complete `0001 -> 0002 -> 0003` SQL rendered with transaction and version updates |
 | Health probes | verified, non-release | real Uvicorn process returned `live` and `ready`; process exited and port closed |
@@ -60,6 +63,28 @@ must be rerun by the main agent against the final evidence commit.
 | Secret/privacy scan | verified, non-release | six credential-shaped matches, all deliberate test fixtures; `.env` ignored |
 | Remote privacy | verified, non-release | GitHub repository is private; pre-candidate local/upstream/remote SHA matched |
 | Paid live success | blocked | no `LLM_GATEWAY_OPENAI_API_KEY` entry detected in ignored `.env` |
+
+## Failed candidate review
+
+Candidate `1167eb61636d964ff0cb8f75186a2fa159b06c64` received
+`CORE REVIEW: FAIL` from all three independent reviewers. The repair wave:
+
+- rejects `max_output_tokens` below the OpenAI minimum before ledger/provider work
+- reconciles ambiguous success commits without relabeling paid provider success as failure
+- deduplicates legacy usage rows before adding the unique attempt constraint
+- ignores future pricing snapshots during bootstrap comparison
+- enforces requested-model and resolved-route consistency
+- disables raw Uvicorn access logs in the packaged server entry point
+- provides a supported synchronous psycopg runtime URL and driver
+
+Repair working-tree verification on June 12, 2026:
+
+- `155 passed, 2 skipped`; skips are the opt-in live probes
+- Ruff lint and format passed
+- strict mypy passed for 30 source files
+- packaged-server credential-shaped query probe emitted no query or secret
+- migration SQL placed deterministic duplicate cleanup before the unique constraint
+- invalid-key OpenAI network probe passed with sanitized failure and no usage
 
 The focused API tests cover timeout, authentication failure, malformed usage,
 refusal, incomplete response, unexpected provider failure, and persistence

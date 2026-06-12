@@ -79,6 +79,25 @@ def test_generate_request_accepts_r1_shape() -> None:
     }
 
 
+def test_generate_request_accepts_minimum_max_output_tokens() -> None:
+    request = GenerateRequest(
+        model="gateway-default",
+        input="hello",
+        max_output_tokens=16,
+    )
+
+    assert request.max_output_tokens == 16
+
+
+def test_generate_request_rejects_max_output_tokens_below_minimum() -> None:
+    with pytest.raises(ValidationError):
+        GenerateRequest(
+            model="gateway-default",
+            input="hello",
+            max_output_tokens=15,
+        )
+
+
 def test_generate_request_rejects_removed_user_field() -> None:
     with pytest.raises(ValidationError):
         GenerateRequest.model_validate(

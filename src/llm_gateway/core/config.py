@@ -4,8 +4,28 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+
+
+def normalize_runtime_database_url(value: str | None) -> str | None:
+    """Require a synchronous PostgreSQL driver for the synchronous ledger."""
+
+    if value is None:
+        return None
+
+    url = make_url(value)
+    if url.drivername in {"postgres", "postgresql"}:
+        return url.set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
+    if url.drivername == "postgresql+asyncpg":
+        raise ValueError(
+            "runtime database URL must use postgresql+psycopg://; "
+            "postgresql+asyncpg:// is reserved for Alembic migrations"
+        )
+    if url.get_backend_name() == "postgresql" and url.drivername != "postgresql+psycopg":
+        raise ValueError("runtime PostgreSQL database URL must use postgresql+psycopg://")
+    return value
 
 
 class Settings(BaseSettings):
@@ -50,6 +70,11 @@ class Settings(BaseSettings):
     )
     generate_output_cost_per_million: Decimal = Field(default=Decimal("1.6000000000"), ge=0)
     live_smoke_enabled: bool = False
+
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, value: str | None) -> str | None:
+        return normalize_runtime_database_url(value)
 
 
 @lru_cache

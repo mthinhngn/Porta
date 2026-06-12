@@ -62,6 +62,26 @@ def upgrade() -> None:
         "usage_records",
         "cached_input_tokens <= prompt_tokens",
     )
+    op.execute(
+        """
+        WITH ranked_usage AS (
+            SELECT
+                id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY provider_attempt_id
+                    ORDER BY recorded_at ASC, id ASC
+                ) AS duplicate_rank
+            FROM usage_records
+            WHERE provider_attempt_id IS NOT NULL
+        )
+        DELETE FROM usage_records
+        WHERE id IN (
+            SELECT id
+            FROM ranked_usage
+            WHERE duplicate_rank > 1
+        )
+        """
+    )
     op.create_unique_constraint(
         "uq_usage_records_provider_attempt_id",
         "usage_records",

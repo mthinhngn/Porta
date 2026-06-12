@@ -193,24 +193,24 @@ class GenerationService:
                 latency_ms=latency_ms,
                 completed_at=completed_at,
             )
-        except Exception as exc:
-            persistence_error = ProviderUnavailableError(
-                "Gateway persistence failed.",
-                code="gateway_persistence_error",
-            )
-            self._finalize_failure(
-                request_id=request_id,
-                attempt_id=attempt_id,
-                latency_started_at=started_at,
-                error=persistence_error,
-                attempt_status="failed",
-            )
-            raise ApiError(
-                message="Gateway persistence failed.",
-                type="server_error",
-                status_code=500,
-                code="gateway_persistence_error",
-            ) from exc
+        except Exception:
+            try:
+                usage_cost = self._ledger.reconcile_generation_success(
+                    gateway_request_id=request_id,
+                    attempt_id=attempt_id,
+                    route=route,
+                    provider_request_id=result.provider_request_id,
+                    usage=result.usage,
+                    latency_ms=latency_ms,
+                    completed_at=completed_at,
+                )
+            except Exception as reconciliation_error:
+                raise ApiError(
+                    message="Gateway persistence failed.",
+                    type="server_error",
+                    status_code=500,
+                    code="gateway_persistence_error",
+                ) from reconciliation_error
         return self._response_from_result(
             request_id=request_id,
             route=route,

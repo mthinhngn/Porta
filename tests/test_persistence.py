@@ -478,6 +478,39 @@ def test_begin_generation_rolls_back_request_when_attempt_insert_fails() -> None
         assert session.query(ProviderAttempt).count() == 0
 
 
+def test_begin_generation_rejects_requested_model_route_mismatch(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'ledger-route-mismatch.sqlite3'}")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    ledger = SqlAlchemyGatewayLedger(sessions)
+    ledger.ensure_r1_route(
+        RouteBootstrap(
+            provider_name="openai",
+            provider_adapter="openai_responses",
+            gateway_model="gateway-default",
+            upstream_model="gpt-4.1-mini",
+            currency="USD",
+            input_cost_per_million=Decimal("0.1500000000"),
+            cached_input_cost_per_million=Decimal("0.0750000000"),
+            output_cost_per_million=Decimal("0.6000000000"),
+        )
+    )
+    route = ledger.resolve_route("gateway-default")
+    assert route is not None
+
+    with pytest.raises(ValueError, match="requested_model"):
+        ledger.begin_generation(
+            correlation_id="correlation-route-mismatch",
+            requested_model="different-model",
+            route=route,
+            started_at=datetime.now(UTC),
+        )
+
+    with sessions() as session:
+        assert session.query(GatewayRequest).count() == 0
+        assert session.query(ProviderAttempt).count() == 0
+
+
 def test_complete_generation_is_idempotently_rejected_after_success(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'ledger-duplicate.sqlite3'}")
     Base.metadata.create_all(engine)
@@ -802,6 +835,19 @@ def test_sqlalchemy_ledger_ignores_future_pricing_until_effective(tmp_path: Path
         future_snapshot_id = future_snapshot.id
         current_snapshot_id = current_snapshot.id
 
+    ledger.ensure_r1_route(
+        RouteBootstrap(
+            provider_name="openai",
+            provider_adapter="openai_responses",
+            gateway_model="gateway-default",
+            upstream_model="gpt-4.1-mini",
+            currency="USD",
+            input_cost_per_million=Decimal("0.1500000000"),
+            cached_input_cost_per_million=Decimal("0.0750000000"),
+            output_cost_per_million=Decimal("0.6000000000"),
+        )
+    )
+
     started_at = datetime.now(UTC)
     request_id, attempt_id = ledger.begin_generation(
         correlation_id="correlation-1",
@@ -827,6 +873,8 @@ def test_sqlalchemy_ledger_ignores_future_pricing_until_effective(tmp_path: Path
 
     with sessions() as session:
         usage = session.query(UsageRecord).one()
+        pricing_count = session.query(PricingSnapshot).count()
 
     assert usage.pricing_snapshot_id == current_snapshot_id
     assert usage.pricing_snapshot_id != future_snapshot_id
+    assert pricing_count == 2

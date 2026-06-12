@@ -58,6 +58,13 @@ def test_upgrade_head_emits_cached_pricing_and_usage_integrity_ddl() -> None:
     assert "SET cached_input_cost_per_million = input_cost_per_million" in ddl
     assert "cached_input_tokens" in ddl
     assert "cached_input_tokens <= prompt_tokens" in ddl
+    assert "ROW_NUMBER() OVER" in ddl
+    assert "PARTITION BY provider_attempt_id" in ddl
+    assert "ORDER BY recorded_at ASC, id ASC" in ddl
+    assert "WHERE provider_attempt_id IS NOT NULL" in ddl
+    assert ddl.index("DELETE FROM usage_records") < ddl.index(
+        "ADD CONSTRAINT uq_usage_records_provider_attempt_id UNIQUE"
+    )
     assert "uq_usage_records_provider_attempt_id" in ddl
     assert "fk_pricing_snapshots_model_provider" in ddl
     assert "fk_usage_records_pricing_snapshot_id_pricing_snapshots" in ddl

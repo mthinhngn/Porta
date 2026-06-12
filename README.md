@@ -24,6 +24,12 @@ health checks do not require database or provider credentials, but `/v1/generate
 needs a database URL and `LLM_GATEWAY_OPENAI_API_KEY`. The ignored `.env` file
 is for local secrets; never put a real key in `.env.example`.
 
+The application ledger uses synchronous SQLAlchemy sessions. Configure its
+PostgreSQL URL as `postgresql+psycopg://user:password@host/database`. A bare
+`postgresql://` URL is normalized to that driver. Runtime
+`postgresql+asyncpg://` URLs are rejected before startup; asyncpg remains
+installed only for Alembic's asynchronous migration environment.
+
 The implementation has one configured OpenAI/model mapping. Authentication,
 Redis, retries, fallback, dynamic routing, and additional providers are outside
 Phase 1.
@@ -31,7 +37,18 @@ Phase 1.
 ## Run
 
 ```console
-uv run uvicorn llm_gateway.main:app --reload
+uv run llm-gateway
+```
+
+The project entry point disables Uvicorn's raw access log because its request
+target can contain confidential query-string values. The gateway still emits a
+structured completion event using only the matched route template, method,
+status, duration, and correlation ID.
+
+For local auto-reload, preserve the same privacy control explicitly:
+
+```console
+uv run uvicorn llm_gateway.main:app --reload --no-access-log
 ```
 
 HTTP endpoints:
@@ -65,6 +82,12 @@ The Alembic environment imports `llm_gateway.persistence.Base.metadata`.
 The current revisions create the Phase 1 persistence schema, including pricing
 snapshots for Decimal cost accounting. The complete additive chain is
 `20260611_0001 -> 20260611_0002 -> 20260612_0003`.
+
+Alembic intentionally uses the separate `postgresql+asyncpg://` URL in
+`alembic.ini` because `alembic/env.py` constructs an async migration engine.
+That migration-only URL must not be copied into
+`LLM_GATEWAY_DATABASE_URL`, which is consumed by the synchronous application
+ledger.
 
 Usage accounting prices uncached input, cached input, and output separately.
 The checked-in `gpt-4.1-mini` defaults are:

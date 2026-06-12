@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
 
+import uvicorn
 from fastapi import FastAPI
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -97,3 +98,9 @@ def _build_generation_service(
 
 
 app = create_app()
+
+
+def run() -> None:
+    """Run the gateway without Uvicorn's raw request-target access logs."""
+
+    uvicorn.run("llm_gateway.main:app", access_log=False)

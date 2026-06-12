@@ -75,9 +75,37 @@ class ExplodingProvider(GenerateProvider):
         raise RuntimeError("boom")
 
 
+class RecordingProvider(GenerateProvider):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    @property
+    def name(self) -> str:
+        return "openai"
+
+    async def generate(
+        self,
+        request: GenerateRequest,
+        context: GenerateProviderContext,
+    ) -> GenerateProviderResult:
+        self.calls += 1
+        raise AssertionError("invalid requests must not reach the provider")
+
+
 class FailingCompleteLedger(SqlAlchemyGatewayLedger):
     def complete_generation(self, **kwargs: object) -> object:
         raise RuntimeError(f"disk full; prompt={PRIVATE_PROMPT}; secret={PRIVATE_SECRET}")
+
+
+class AmbiguousCompleteLedger(SqlAlchemyGatewayLedger):
+    def complete_generation(self, **kwargs: object) -> object:
+        super().complete_generation(**kwargs)
+        raise RuntimeError("connection lost after commit")
+
+
+class FailingCompleteAndReconciliationLedger(FailingCompleteLedger):
+    def reconcile_generation_success(self, **kwargs: object) -> object:
+        raise RuntimeError(f"still offline; prompt={PRIVATE_PROMPT}; secret={PRIVATE_SECRET}")
 
 
 def _service(
@@ -241,6 +269,34 @@ def test_generate_validation_stays_openai_shaped(tmp_path: Path) -> None:
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "validation_error"
     assert response.json()["error"]["type"] == "invalid_request_error"
+
+
+def test_generate_rejects_small_max_output_tokens_before_ledger_or_provider(
+    tmp_path: Path,
+) -> None:
+    provider = RecordingProvider()
+
+    with _client(tmp_path, {"openai": provider}) as client:
+        response = client.post(
+            "/v1/generate",
+            json={
+                "model": "gateway-default",
+                "input": "hello",
+                "max_output_tokens": 15,
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "validation_error"
+    assert provider.calls == 0
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        assert session.query(GatewayRequest).count() == 0
+        assert session.query(ProviderAttempt).count() == 0
+        assert session.query(UsageRecord).count() == 0
+    engine.dispose()
 
 
 def test_generate_timeout_maps_to_gateway_error(tmp_path: Path) -> None:
@@ -418,7 +474,7 @@ def test_generate_unexpected_provider_exception_is_terminal(tmp_path: Path) -> N
     assert usage_count == 0
 
 
-def test_generate_persistence_failure_reconciles_to_terminal_failure(tmp_path: Path) -> None:
+def test_generate_completion_failure_reconciles_provider_success(tmp_path: Path) -> None:
     provider = StubProvider(
         GenerateProviderResult(
             output="hello world",
@@ -439,9 +495,8 @@ def test_generate_persistence_failure_reconciles_to_terminal_failure(tmp_path: P
     ) as client:
         response = client.post("/v1/generate", json={"model": "gateway-default", "input": "hello"})
 
-    assert response.status_code == 500
-    assert response.json()["error"]["code"] == "gateway_persistence_error"
-    assert response.json()["error"]["message"] == "Gateway persistence failed."
+    assert response.status_code == 200
+    assert response.json()["output"] == "hello world"
     assert PRIVATE_PROMPT not in response.text
     assert PRIVATE_SECRET not in response.text
 
@@ -452,12 +507,94 @@ def test_generate_persistence_failure_reconciles_to_terminal_failure(tmp_path: P
         attempt = session.query(ProviderAttempt).one()
         usage_count = session.query(UsageRecord).count()
 
-    assert request.status == "failed"
-    assert request.error_code == "gateway_persistence_error"
-    assert request.error_message == "Gateway persistence failed."
-    assert attempt.status == "failed"
-    assert attempt.error_code == "gateway_persistence_error"
-    assert attempt.error_message == "Gateway persistence failed."
+    assert request.status == "succeeded"
+    assert request.error_code is None
+    assert request.error_message is None
+    assert attempt.status == "succeeded"
+    assert attempt.error_code is None
+    assert attempt.error_message is None
+    assert usage_count == 1
+    persisted = _database_dump(tmp_path / "generate.sqlite3")
+    assert PRIVATE_PROMPT not in persisted
+    assert PRIVATE_OUTPUT not in persisted
+    assert PRIVATE_SECRET not in persisted
+
+
+def test_generate_ambiguous_commit_reuses_persisted_usage(tmp_path: Path) -> None:
+    provider = StubProvider(
+        GenerateProviderResult(
+            output="hello world",
+            usage=ProviderTokenUsage(
+                input_tokens=2,
+                cached_input_tokens=1,
+                output_tokens=3,
+                total_tokens=5,
+            ),
+            provider_request_id="resp_ambiguous",
+        )
+    )
+
+    with _client(
+        tmp_path,
+        {"openai": provider},
+        ledger_type=AmbiguousCompleteLedger,
+    ) as client:
+        response = client.post("/v1/generate", json={"model": "gateway-default", "input": "hello"})
+
+    assert response.status_code == 200
+    engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        request = session.query(GatewayRequest).one()
+        attempt = session.query(ProviderAttempt).one()
+        usage_records = session.query(UsageRecord).all()
+
+    assert request.status == "succeeded"
+    assert attempt.status == "succeeded"
+    assert attempt.upstream_request_id == "resp_ambiguous"
+    assert len(usage_records) == 1
+    assert usage_records[0].cached_input_tokens == 1
+
+
+def test_generate_unrecoverable_persistence_failure_stays_reconcilable(
+    tmp_path: Path,
+) -> None:
+    provider = StubProvider(
+        GenerateProviderResult(
+            output="hello world",
+            usage=ProviderTokenUsage(
+                input_tokens=2,
+                cached_input_tokens=0,
+                output_tokens=3,
+                total_tokens=5,
+            ),
+            provider_request_id="resp_unpersisted",
+        )
+    )
+
+    with _client(
+        tmp_path,
+        {"openai": provider},
+        ledger_type=FailingCompleteAndReconciliationLedger,
+    ) as client:
+        response = client.post("/v1/generate", json={"model": "gateway-default", "input": "hello"})
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "gateway_persistence_error"
+    assert PRIVATE_PROMPT not in response.text
+    assert PRIVATE_SECRET not in response.text
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        request = session.query(GatewayRequest).one()
+        attempt = session.query(ProviderAttempt).one()
+        usage_count = session.query(UsageRecord).count()
+
+    assert request.status == "in_progress"
+    assert request.error_code is None
+    assert attempt.status == "in_progress"
+    assert attempt.error_code is None
     assert usage_count == 0
     persisted = _database_dump(tmp_path / "generate.sqlite3")
     assert PRIVATE_PROMPT not in persisted

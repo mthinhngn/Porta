@@ -109,6 +109,12 @@ the OpenAI Responses adapter.
 : SQLAlchemy entities, configured mapping bootstrap, lifecycle transactions,
 pricing selection, and usage accounting.
 
+The application ledger is synchronous and uses
+`postgresql+psycopg://`. Bare `postgresql://` runtime URLs normalize to psycopg;
+asyncpg runtime URLs fail configuration validation before engine construction.
+Alembic is a separate process boundary and retains its asyncpg engine for
+online migrations.
+
 `llm_gateway.services`
 : Orchestration across configured model lookup, provider execution,
 persistence, and public response construction.
@@ -126,6 +132,8 @@ provider payloads.
 stored as error messages.
 - Correlation IDs are validated opaque operational identifiers.
 - Provider request IDs are confidential operational metadata.
+- The packaged server disables Uvicorn raw access logs; gateway request logs
+  use route templates and never include query strings.
 
 See [privacy.md](privacy.md) for the full handling policy.
 

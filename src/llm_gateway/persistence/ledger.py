@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Protocol
 from uuid import UUID
@@ -114,6 +114,18 @@ class GatewayLedger(Protocol):
         completed_at: datetime,
     ) -> UsageCost: ...
 
+    def reconcile_generation_success(
+        self,
+        *,
+        gateway_request_id: UUID,
+        attempt_id: UUID,
+        route: GatewayRoute,
+        provider_request_id: str | None,
+        usage: ProviderTokenUsage,
+        latency_ms: int,
+        completed_at: datetime,
+    ) -> UsageCost: ...
+
 
 class SqlAlchemyGatewayLedger(GatewayLedger):
     """Synchronous persistence helpers used by the main generation service."""
@@ -122,6 +134,7 @@ class SqlAlchemyGatewayLedger(GatewayLedger):
         self._session_factory = session_factory
 
     def ensure_r1_route(self, config: RouteBootstrap) -> None:
+        effective_now = datetime.now(UTC)
         with self._session_factory.begin() as session:
             provider = session.scalar(select(Provider).where(Provider.name == config.provider_name))
             if provider is None:
@@ -164,6 +177,7 @@ class SqlAlchemyGatewayLedger(GatewayLedger):
                 .where(
                     PricingSnapshot.provider_id == provider.id,
                     PricingSnapshot.model_id == model.id,
+                    PricingSnapshot.effective_at <= effective_now,
                 )
                 .order_by(desc(PricingSnapshot.effective_at))
                 .limit(1)
@@ -221,6 +235,8 @@ class SqlAlchemyGatewayLedger(GatewayLedger):
         route: GatewayRoute,
         started_at: datetime,
     ) -> tuple[UUID, UUID]:
+        if requested_model != route.gateway_model:
+            raise ValueError("requested_model must match the selected route gateway_model")
         with self._session_factory.begin() as session:
             record = GatewayRequest(
                 correlation_id=correlation_id,
@@ -286,6 +302,51 @@ class SqlAlchemyGatewayLedger(GatewayLedger):
         latency_ms: int,
         completed_at: datetime,
     ) -> UsageCost:
+        return self._persist_generation_success(
+            gateway_request_id=gateway_request_id,
+            attempt_id=attempt_id,
+            route=route,
+            provider_request_id=provider_request_id,
+            usage=usage,
+            latency_ms=latency_ms,
+            completed_at=completed_at,
+            allow_existing=False,
+        )
+
+    def reconcile_generation_success(
+        self,
+        *,
+        gateway_request_id: UUID,
+        attempt_id: UUID,
+        route: GatewayRoute,
+        provider_request_id: str | None,
+        usage: ProviderTokenUsage,
+        latency_ms: int,
+        completed_at: datetime,
+    ) -> UsageCost:
+        return self._persist_generation_success(
+            gateway_request_id=gateway_request_id,
+            attempt_id=attempt_id,
+            route=route,
+            provider_request_id=provider_request_id,
+            usage=usage,
+            latency_ms=latency_ms,
+            completed_at=completed_at,
+            allow_existing=True,
+        )
+
+    def _persist_generation_success(
+        self,
+        *,
+        gateway_request_id: UUID,
+        attempt_id: UUID,
+        route: GatewayRoute,
+        provider_request_id: str | None,
+        usage: ProviderTokenUsage,
+        latency_ms: int,
+        completed_at: datetime,
+        allow_existing: bool,
+    ) -> UsageCost:
         with self._session_factory.begin() as session:
             request = session.get(
                 GatewayRequest,
@@ -303,6 +364,19 @@ class SqlAlchemyGatewayLedger(GatewayLedger):
                 raise RuntimeError("Provider attempt does not belong to the generation request.")
             if attempt.provider_id != route.provider_id or attempt.model_id != route.model_id:
                 raise RuntimeError("Provider attempt does not match the selected route.")
+            if allow_existing and request.status == "succeeded" and attempt.status == "succeeded":
+                usage_record = session.scalar(
+                    select(UsageRecord).where(UsageRecord.provider_attempt_id == attempt_id)
+                )
+                if usage_record is None:
+                    raise RuntimeError("Succeeded provider attempt has no usage record.")
+                self._validate_reconciled_success(
+                    attempt=attempt,
+                    usage_record=usage_record,
+                    provider_request_id=provider_request_id,
+                    usage=usage,
+                )
+                return self._usage_cost_from_record(usage_record)
             if request.status != "in_progress" or attempt.status != "in_progress":
                 raise RuntimeError("Generation request and provider attempt must be in progress.")
 
@@ -345,6 +419,37 @@ class SqlAlchemyGatewayLedger(GatewayLedger):
                 estimated_cost=estimated_cost,
                 currency=pricing.currency,
             )
+
+    @staticmethod
+    def _validate_reconciled_success(
+        *,
+        attempt: ProviderAttempt,
+        usage_record: UsageRecord,
+        provider_request_id: str | None,
+        usage: ProviderTokenUsage,
+    ) -> None:
+        if attempt.upstream_request_id != provider_request_id:
+            raise RuntimeError("Persisted provider request does not match reconciliation result.")
+        if (
+            usage_record.prompt_tokens != usage.input_tokens
+            or usage_record.cached_input_tokens != usage.cached_input_tokens
+            or usage_record.completion_tokens != usage.output_tokens
+            or usage_record.total_tokens != usage.total_tokens
+        ):
+            raise RuntimeError("Persisted usage does not match reconciliation result.")
+
+    @staticmethod
+    def _usage_cost_from_record(usage_record: UsageRecord) -> UsageCost:
+        if usage_record.estimated_cost is None or usage_record.currency is None:
+            raise RuntimeError("Persisted usage is missing cost information.")
+        return UsageCost(
+            input_tokens=usage_record.prompt_tokens,
+            cached_input_tokens=usage_record.cached_input_tokens,
+            output_tokens=usage_record.completion_tokens,
+            total_tokens=usage_record.total_tokens,
+            estimated_cost=usage_record.estimated_cost,
+            currency=usage_record.currency,
+        )
 
     def _pricing_snapshot(
         self,

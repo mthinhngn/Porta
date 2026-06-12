@@ -246,6 +246,50 @@ def test_openai_responses_adapter_normalizes_success_and_sets_store_false() -> N
     asyncio.run(client.aclose())
 
 
+def test_openai_responses_adapter_forwards_minimum_max_output_tokens() -> None:
+    seen_payload: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal seen_payload
+        seen_payload = cast(dict[str, Any], json.loads(request.content.decode("utf-8")))
+        return httpx.Response(
+            status_code=200,
+            json={
+                "id": "resp_123",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "hello"}],
+                    }
+                ],
+                "usage": {
+                    "input_tokens": 1,
+                    "output_tokens": 1,
+                    "total_tokens": 2,
+                },
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenAIResponsesProvider(
+        api_key="test-key",
+        base_url="https://api.openai.com/v1",
+        client=client,
+    )
+    minimum_request = GenerateRequest(
+        model="gateway-default",
+        input="private prompt",
+        max_output_tokens=16,
+    )
+
+    asyncio.run(provider.generate(minimum_request, generate_context()))
+
+    assert seen_payload["max_output_tokens"] == 16
+
+    asyncio.run(client.aclose())
+
+
 def test_openai_responses_adapter_defaults_absent_cache_details_to_miss() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(

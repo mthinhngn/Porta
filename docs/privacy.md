@@ -35,6 +35,19 @@ period.
 Redaction is not anonymization. Access controls and retention limits still
 apply to redacted records.
 
+## HTTP access logs
+
+Uvicorn's default access logger renders the raw request target, including its
+query string. Query parameters may contain credentials or confidential
+identifiers even though gateway endpoints do not require them.
+
+Run the packaged `uv run llm-gateway` entry point, which disables Uvicorn access
+logs, or pass `--no-access-log` to direct Uvicorn invocations. Do not deploy the
+documented application with Uvicorn access logging enabled. The gateway's own
+request-completion event remains enabled and records only an allowlisted matched
+route template without the query string, plus method, status, duration, and a
+validated correlation ID.
+
 ## Correlation IDs
 
 Correlation IDs are operational identifiers only. Accept an inbound value only

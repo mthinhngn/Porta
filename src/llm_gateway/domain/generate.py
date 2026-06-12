@@ -16,7 +16,7 @@ class GenerateRequest(ContractModel):
     input: Annotated[str, Field(min_length=1, max_length=32768)]
     temperature: Annotated[float, Field(ge=0.0, le=2.0)] | None = None
     top_p: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
-    max_output_tokens: Annotated[int, Field(ge=1)] | None = None
+    max_output_tokens: Annotated[int, Field(ge=16)] | None = None
 
 
 class GenerateTokenUsage(ContractModel):
