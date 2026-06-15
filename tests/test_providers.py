@@ -21,6 +21,7 @@ from llm_gateway.providers import (
     ChatCompletionProvider,
     GenerateProvider,
     GenerateProviderContext,
+    OllamaGenerateProvider,
     OpenAIResponsesProvider,
     ProviderAuthenticationError,
     ProviderBadRequestError,
@@ -531,4 +532,115 @@ def test_openai_responses_adapter_rejects_unusable_output_without_retaining_body
     assert error.__context__ is None
     assert "private-secret" not in repr(vars(error))
 
+    asyncio.run(client.aclose())
+
+
+def test_ollama_adapter_normalizes_non_streaming_success() -> None:
+    seen_payload: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal seen_payload
+        seen_payload = cast(dict[str, Any], json.loads(request.content.decode("utf-8")))
+        return httpx.Response(
+            200,
+            json={
+                "model": "llama3.2:3b",
+                "response": "local hello",
+                "done": True,
+                "prompt_eval_count": 4,
+                "eval_count": 3,
+            },
+        )
+
+    client = httpx.AsyncClient(
+        base_url="http://ollama.test",
+        transport=httpx.MockTransport(handler),
+    )
+    provider = OllamaGenerateProvider(client=client, name="llama")
+    context = GenerateProviderContext(
+        gateway_request_id=uuid4(),
+        correlation_id="correlation-1",
+        provider_name="llama",
+        model_name="llama3.2:3b",
+        timeout_seconds=10,
+    )
+
+    result = asyncio.run(provider.generate(generate_request(), context))
+
+    assert result.output == "local hello"
+    assert result.usage == ProviderTokenUsage(
+        input_tokens=4,
+        cached_input_tokens=0,
+        output_tokens=3,
+        total_tokens=7,
+    )
+    assert seen_payload == {
+        "model": "llama3.2:3b",
+        "prompt": "private prompt",
+        "stream": False,
+        "options": {"num_predict": 32},
+    }
+    asyncio.run(client.aclose())
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_error"),
+    [
+        (400, ProviderBadRequestError),
+        (404, ProviderUnavailableError),
+        (429, ProviderUnavailableError),
+        (500, ProviderUnavailableError),
+    ],
+)
+def test_ollama_adapter_maps_sanitized_errors(
+    status_code: int,
+    expected_error: type[Exception],
+) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, json={"error": "private prompt and secret"})
+
+    client = httpx.AsyncClient(
+        base_url="http://ollama.test",
+        transport=httpx.MockTransport(handler),
+    )
+    provider = OllamaGenerateProvider(client=client, name="qwen")
+    context = GenerateProviderContext(
+        gateway_request_id=uuid4(),
+        correlation_id="correlation-1",
+        provider_name="qwen",
+        model_name="qwen2.5-coder:3b",
+        timeout_seconds=10,
+    )
+
+    with pytest.raises(expected_error) as exc_info:
+        asyncio.run(provider.generate(generate_request(), context))
+
+    assert "private" not in str(exc_info.value)
+    asyncio.run(client.aclose())
+
+
+def test_ollama_adapter_rejects_malformed_payload_without_retaining_body() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"response": "private output", "done": True, "prompt_eval_count": "bad"},
+        )
+
+    client = httpx.AsyncClient(
+        base_url="http://ollama.test",
+        transport=httpx.MockTransport(handler),
+    )
+    provider = OllamaGenerateProvider(client=client, name="llama")
+    context = GenerateProviderContext(
+        gateway_request_id=uuid4(),
+        correlation_id="correlation-1",
+        provider_name="llama",
+        model_name="llama3.2:3b",
+        timeout_seconds=10,
+    )
+
+    with pytest.raises(ProviderResponseError) as exc_info:
+        asyncio.run(provider.generate(generate_request(), context))
+
+    assert "private output" not in repr(vars(exc_info.value))
     asyncio.run(client.aclose())

@@ -1,3 +1,6 @@
+import asyncio
+
+import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -120,3 +123,65 @@ def test_readiness_returns_not_ready_when_redis_ping_fails() -> None:
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "not_ready"
+
+
+def test_readiness_requires_enabled_ollama_models() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/tags"
+        return httpx.Response(
+            200,
+            json={
+                "models": [
+                    {"name": "llama3.2:3b"},
+                    {"name": "qwen2.5-coder:3b"},
+                ]
+            },
+        )
+
+    ollama_client = httpx.AsyncClient(
+        base_url="http://ollama.test",
+        transport=httpx.MockTransport(handler),
+    )
+    app = create_app(
+        Settings(
+            environment="test",
+            redis_url="redis://example.test:6379/0",
+            generate_llama_enabled=True,
+            generate_qwen_enabled=True,
+        ),
+        redis_client=StubRedisClient(),
+        ollama_client=ollama_client,
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health/ready")
+
+    asyncio.run(ollama_client.aclose())
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+
+
+def test_readiness_fails_when_enabled_ollama_model_is_missing() -> None:
+    ollama_client = httpx.AsyncClient(
+        base_url="http://ollama.test",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json={"models": [{"name": "llama3.2:3b"}]})
+        ),
+    )
+    app = create_app(
+        Settings(
+            environment="test",
+            redis_url="redis://example.test:6379/0",
+            generate_llama_enabled=True,
+            generate_qwen_enabled=True,
+        ),
+        redis_client=StubRedisClient(),
+        ollama_client=ollama_client,
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health/ready")
+
+    asyncio.run(ollama_client.aclose())
+    assert response.status_code == 503
+    assert response.json()["error"]["message"] == "Required local models are unavailable."

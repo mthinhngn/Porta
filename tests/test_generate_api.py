@@ -267,7 +267,7 @@ def test_actor_provider_policy_stops_before_request_persistence(tmp_path: Path) 
     with _client(
         tmp_path,
         {"openai": provider},
-        allowed_providers=("gemini",),
+        allowed_providers=("qwen",),
     ) as client:
         response = client.post(
             "/v1/generate",
@@ -586,8 +586,8 @@ def test_generate_rejects_unusable_openai_response_at_api_boundary(
 
 def test_generate_non_retryable_error_does_not_retry_or_fallback(tmp_path: Path) -> None:
     openai = SequenceProvider("openai", [ProviderBadRequestError("bad request")])
-    anthropic = SequenceProvider(
-        "anthropic",
+    llama = SequenceProvider(
+        "llama",
         [
             GenerateProviderResult(
                 output="should not run",
@@ -612,28 +612,28 @@ def test_generate_non_retryable_error_does_not_retry_or_fallback(tmp_path: Path)
             output_cost_per_million=Decimal("1.6000000000"),
         ),
         RouteBootstrap(
-            provider_name="anthropic",
-            provider_adapter="anthropic_messages",
+            provider_name="llama",
+            provider_adapter="ollama_generate",
             gateway_model="gateway-default",
-            upstream_model="claude-3-5-haiku-latest",
+            upstream_model="llama3.2:3b",
             currency="USD",
-            input_cost_per_million=Decimal("0.8000000000"),
-            cached_input_cost_per_million=Decimal("0.0000000000"),
-            output_cost_per_million=Decimal("4.0000000000"),
+            input_cost_per_million=Decimal("0"),
+            cached_input_cost_per_million=Decimal("0"),
+            output_cost_per_million=Decimal("0"),
         ),
     )
 
     with _client(
         tmp_path,
-        {"openai": openai, "anthropic": anthropic},
-        provider_order=["openai", "anthropic"],
+        {"openai": openai, "llama": llama},
+        provider_order=["openai", "llama"],
         bootstraps=bootstraps,
     ) as client:
         response = client.post("/v1/generate", json={"model": "gateway-default", "input": "hello"})
 
     assert response.status_code == 400
     assert openai.calls == 1
-    assert anthropic.calls == 0
+    assert llama.calls == 0
 
     engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
     sessions = sessionmaker(bind=engine, expire_on_commit=False)
@@ -642,7 +642,7 @@ def test_generate_non_retryable_error_does_not_retry_or_fallback(tmp_path: Path)
         assert session.query(UsageRecord).count() == 0
 
 
-def test_generate_retryable_error_retries_then_falls_back_once(tmp_path: Path) -> None:
+def test_generate_general_task_retries_then_falls_back_to_llama(tmp_path: Path) -> None:
     openai = SequenceProvider(
         "openai",
         [
@@ -650,8 +650,8 @@ def test_generate_retryable_error_retries_then_falls_back_once(tmp_path: Path) -
             ProviderRateLimitError("still full"),
         ],
     )
-    anthropic = SequenceProvider(
-        "anthropic",
+    llama = SequenceProvider(
+        "llama",
         [
             GenerateProviderResult(
                 output="fallback hello",
@@ -661,7 +661,6 @@ def test_generate_retryable_error_retries_then_falls_back_once(tmp_path: Path) -
                     output_tokens=4,
                     total_tokens=7,
                 ),
-                provider_request_id="anthropic_123",
             )
         ],
     )
@@ -677,32 +676,32 @@ def test_generate_retryable_error_retries_then_falls_back_once(tmp_path: Path) -
             output_cost_per_million=Decimal("1.6000000000"),
         ),
         RouteBootstrap(
-            provider_name="anthropic",
-            provider_adapter="anthropic_messages",
+            provider_name="llama",
+            provider_adapter="ollama_generate",
             gateway_model="gateway-default",
-            upstream_model="claude-3-5-haiku-latest",
+            upstream_model="llama3.2:3b",
             currency="USD",
-            input_cost_per_million=Decimal("0.8000000000"),
-            cached_input_cost_per_million=Decimal("0.0000000000"),
-            output_cost_per_million=Decimal("4.0000000000"),
+            input_cost_per_million=Decimal("0"),
+            cached_input_cost_per_million=Decimal("0"),
+            output_cost_per_million=Decimal("0"),
         ),
     )
 
     with _client(
         tmp_path,
-        {"openai": openai, "anthropic": anthropic},
-        provider_order=["openai", "anthropic"],
+        {"openai": openai, "llama": llama},
+        provider_order=["openai", "llama"],
         bootstraps=bootstraps,
     ) as client:
         response = client.post("/v1/generate", json={"model": "gateway-default", "input": "hello"})
 
     assert response.status_code == 200
     body = response.json()
-    assert body["provider"] == "anthropic"
+    assert body["provider"] == "llama"
     assert body["attempt_count"] == 3
     assert body["routing_reason"] == "fallback_after_retry"
     assert openai.calls == 2
-    assert anthropic.calls == 1
+    assert llama.calls == 1
 
     engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
     sessions = sessionmaker(bind=engine, expire_on_commit=False)
@@ -714,17 +713,168 @@ def test_generate_retryable_error_retries_then_falls_back_once(tmp_path: Path) -
     assert [(providers[attempt.provider_id], attempt.attempt_number) for attempt in attempts] == [
         ("openai", 1),
         ("openai", 2),
-        ("anthropic", 3),
+        ("llama", 3),
     ]
     assert [attempt.status for attempt in attempts] == ["failed", "failed", "succeeded"]
     assert len(usage_records) == 1
     assert usage_records[0].provider_attempt_id == attempts[-1].id
+    assert usage_records[0].estimated_cost == Decimal("0")
+
+
+def test_generate_coding_task_retries_then_falls_back_to_qwen(tmp_path: Path) -> None:
+    openai = SequenceProvider(
+        "openai",
+        [ProviderUnavailableError("first outage"), ProviderRateLimitError("still full")],
+    )
+    qwen = SequenceProvider(
+        "qwen",
+        [
+            GenerateProviderResult(
+                output="def hello(): return 'hello'",
+                usage=ProviderTokenUsage(
+                    input_tokens=5,
+                    cached_input_tokens=0,
+                    output_tokens=6,
+                    total_tokens=11,
+                ),
+            )
+        ],
+    )
+    llama = SequenceProvider("llama", [ProviderUnavailableError("must not run")])
+    bootstraps = (
+        RouteBootstrap(
+            provider_name="openai",
+            provider_adapter="openai_responses",
+            gateway_model="gateway-default",
+            upstream_model="gpt-4.1-mini",
+            currency="USD",
+            input_cost_per_million=Decimal("0.4000000000"),
+            cached_input_cost_per_million=Decimal("0.1000000000"),
+            output_cost_per_million=Decimal("1.6000000000"),
+        ),
+        RouteBootstrap(
+            provider_name="llama",
+            provider_adapter="ollama_generate",
+            gateway_model="gateway-default",
+            upstream_model="llama3.2:3b",
+            currency="USD",
+            input_cost_per_million=Decimal("0"),
+            cached_input_cost_per_million=Decimal("0"),
+            output_cost_per_million=Decimal("0"),
+        ),
+        RouteBootstrap(
+            provider_name="qwen",
+            provider_adapter="ollama_generate",
+            gateway_model="gateway-default",
+            upstream_model="qwen2.5-coder:3b",
+            currency="USD",
+            input_cost_per_million=Decimal("0"),
+            cached_input_cost_per_million=Decimal("0"),
+            output_cost_per_million=Decimal("0"),
+        ),
+    )
+
+    with _client(
+        tmp_path,
+        {"openai": openai, "llama": llama, "qwen": qwen},
+        provider_order=["openai", "llama", "qwen"],
+        bootstraps=bootstraps,
+    ) as client:
+        response = client.post(
+            "/v1/generate",
+            json={"model": "gateway-default", "input": "Implement a Python function"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "qwen"
+    assert response.json()["attempt_count"] == 3
+    assert openai.calls == 2
+    assert qwen.calls == 1
+    assert llama.calls == 0
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        attempts = session.query(ProviderAttempt).order_by(ProviderAttempt.attempt_number).all()
+        providers = {provider.id: provider.name for provider in session.query(Provider).all()}
+        usage = session.query(UsageRecord).one()
+    assert [(providers[item.provider_id], item.attempt_number) for item in attempts] == [
+        ("openai", 1),
+        ("openai", 2),
+        ("qwen", 3),
+    ]
+    assert usage.provider_attempt_id == attempts[-1].id
+    assert usage.estimated_cost == Decimal("0")
+
+
+def test_generate_preferred_local_failure_uses_alternate_local_model(tmp_path: Path) -> None:
+    openai = SequenceProvider(
+        "openai",
+        [ProviderUnavailableError("first outage"), ProviderUnavailableError("second outage")],
+    )
+    qwen = SequenceProvider("qwen", [ProviderUnavailableError("qwen unavailable")])
+    llama = SequenceProvider(
+        "llama",
+        [
+            GenerateProviderResult(
+                output="alternate local success",
+                usage=ProviderTokenUsage(
+                    input_tokens=3,
+                    cached_input_tokens=0,
+                    output_tokens=3,
+                    total_tokens=6,
+                ),
+            )
+        ],
+    )
+    local_route = lambda name, model: RouteBootstrap(  # noqa: E731
+        provider_name=name,
+        provider_adapter="ollama_generate",
+        gateway_model="gateway-default",
+        upstream_model=model,
+        currency="USD",
+        input_cost_per_million=Decimal("0"),
+        cached_input_cost_per_million=Decimal("0"),
+        output_cost_per_million=Decimal("0"),
+    )
+    bootstraps = (
+        RouteBootstrap(
+            provider_name="openai",
+            provider_adapter="openai_responses",
+            gateway_model="gateway-default",
+            upstream_model="gpt-4.1-mini",
+            currency="USD",
+            input_cost_per_million=Decimal("0.4000000000"),
+            cached_input_cost_per_million=Decimal("0.1000000000"),
+            output_cost_per_million=Decimal("1.6000000000"),
+        ),
+        local_route("llama", "llama3.2:3b"),
+        local_route("qwen", "qwen2.5-coder:3b"),
+    )
+
+    with _client(
+        tmp_path,
+        {"openai": openai, "llama": llama, "qwen": qwen},
+        provider_order=["openai", "llama", "qwen"],
+        bootstraps=bootstraps,
+    ) as client:
+        response = client.post(
+            "/v1/generate",
+            json={"model": "gateway-default", "input": "Debug this function"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "llama"
+    assert response.json()["attempt_count"] == 4
+    assert openai.calls == 2
+    assert qwen.calls == 1
+    assert llama.calls == 1
 
 
 def test_generate_deadline_exhaustion_stops_extra_attempts(tmp_path: Path) -> None:
-    openai = SleepingProvider("openai", sleep_seconds=0.1)
-    anthropic = SequenceProvider(
-        "anthropic",
+    openai = SleepingProvider("openai", sleep_seconds=0.3)
+    llama = SequenceProvider(
+        "llama",
         [
             GenerateProviderResult(
                 output="should not run",
@@ -749,30 +899,30 @@ def test_generate_deadline_exhaustion_stops_extra_attempts(tmp_path: Path) -> No
             output_cost_per_million=Decimal("1.6000000000"),
         ),
         RouteBootstrap(
-            provider_name="anthropic",
-            provider_adapter="anthropic_messages",
+            provider_name="llama",
+            provider_adapter="ollama_generate",
             gateway_model="gateway-default",
-            upstream_model="claude-3-5-haiku-latest",
+            upstream_model="llama3.2:3b",
             currency="USD",
-            input_cost_per_million=Decimal("0.8000000000"),
-            cached_input_cost_per_million=Decimal("0.0000000000"),
-            output_cost_per_million=Decimal("4.0000000000"),
+            input_cost_per_million=Decimal("0"),
+            cached_input_cost_per_million=Decimal("0"),
+            output_cost_per_million=Decimal("0"),
         ),
     )
 
     with _client(
         tmp_path,
-        {"openai": openai, "anthropic": anthropic},
-        provider_order=["openai", "anthropic"],
+        {"openai": openai, "llama": llama},
+        provider_order=["openai", "llama"],
         bootstraps=bootstraps,
-        timeout_seconds=0.02,
+        timeout_seconds=0.1,
     ) as client:
         response = client.post("/v1/generate", json={"model": "gateway-default", "input": "hello"})
 
     assert response.status_code == 504
     assert response.json()["error"]["code"] == "provider_timeout"
     assert openai.calls == 1
-    assert anthropic.calls == 0
+    assert llama.calls == 0
 
     engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
     sessions = sessionmaker(bind=engine, expire_on_commit=False)

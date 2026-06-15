@@ -130,3 +130,17 @@ same opt-in file also sends an invalid-key request and verifies the sanitized
 authentication failure path. It never prints the configured key.
 
 Gate evidence is recorded under `docs/gates/`.
+
+## Local Ollama Fallbacks
+
+Phase 2 uses two free local fallback models:
+
+```powershell
+ollama pull llama3.2:3b
+ollama pull qwen2.5-coder:3b
+$env:LLM_GATEWAY_LOCAL_SMOKE="1"
+uv run pytest tests/test_local_smoke.py -s
+```
+
+General prompts prefer Llama and coding prompts prefer Qwen after the single
+OpenAI retry. Both local models retain token accounting but use zero USD pricing.

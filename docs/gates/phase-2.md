@@ -3,8 +3,8 @@
 ## Verdict rule
 
 Phase 2 is not complete until the exact candidate commit passes the automated
-gate, the approved Anthropic fallback smoke, and all four read-only review
-lanes.
+gate, both free local fallback smokes, the approved OpenAI smoke, and all four
+read-only review lanes.
 
 ## Contract freeze
 
@@ -17,8 +17,8 @@ The implementation under review must match these frozen rules:
   persist`.
 - Cache scope is per actor and keyed from actor identity, normalized request
   fingerprint, resolved model, and guardrail version.
-- Provider order is primary OpenAI, then Anthropic, then Gemini when policy
-  allows.
+- Provider order is primary OpenAI, then task-aware local fallback through
+  Ollama: Qwen then Llama for coding, or Llama then Qwen for general prompts.
 - Retry policy allows at most one same-provider retry within one shared
   absolute deadline.
 - Guardrail outcomes are only `allow` or `block`, with sanitized reason codes.
@@ -51,7 +51,9 @@ Must prove:
 
 - non-retryable failures do not retry or fall back
 - retryable failures use at most one same-provider retry
-- fallback order is OpenAI, then Anthropic, then Gemini when enabled
+- coding fallback order is OpenAI, Qwen, then Llama
+- general fallback order is OpenAI, Llama, then Qwen
+- only OpenAI receives the one allowed same-provider retry
 - one shared deadline budget prevents attempts after time is exhausted
 - exactly one winning attempt creates exactly one usage row and one charge
 
@@ -84,13 +86,13 @@ Live smoke remains opt-in and gate-only.
 
 Required live evidence:
 
-- authenticated low-cost OpenAI success still works
-- approved forced-fallback smoke shows a retryable OpenAI failure followed by
-  successful Anthropic completion
-
-Optional live evidence:
-
-- Gemini smoke may run, but it is not Phase 2 blocking
+- free local general fallback succeeds with two deterministic retryable OpenAI
+  failures followed by Llama
+- free local coding fallback succeeds with two deterministic retryable OpenAI
+  failures followed by Qwen
+- both local winners create exactly one zero-cost usage row tied to the winning
+  attempt
+- authenticated low-cost OpenAI success still works after explicit approval
 
 ## Reviewer sign-off
 

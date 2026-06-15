@@ -100,8 +100,15 @@ must still report the provider that produced the cached result.
 ### Provider pool and retry contract
 
 - The provider pool starts with primary `openai`.
-- Ordered fallback providers are `anthropic`, then `gemini`.
+- Local fallback providers are `llama` (`llama3.2:3b`) and `qwen`
+  (`qwen2.5-coder:3b`) through Ollama.
+- Coding prompts fall back in `qwen`, then `llama` order. General prompts fall
+  back in `llama`, then `qwen` order.
+- Task classification is deterministic and in-process; it does not make an
+  additional model call or retain prompt text.
 - Retry policy allows at most one same-provider retry for retryable failures.
+- Only OpenAI is eligible for the same-provider retry. Each local fallback gets
+  at most one attempt.
 - All attempts share one absolute end-to-end deadline budget.
 - Non-retryable failures must not trigger retry or fallback.
 - Retry/fallback selection must respect any actor-level provider-access policy.
@@ -167,8 +174,9 @@ Provider SDK and persistence types never cross the public HTTP boundary.
    cache is checked.
 4. A cache hit returns the encrypted cached response without provider execution
    or new accounting. A miss obtains a short-lived per-key reservation.
-5. The service resolves eligible routes in `openai`, `anthropic`, then `gemini`
-   order, filtered by the actor provider policy.
+5. The service classifies the request as coding or general, then resolves
+   eligible routes as `openai -> qwen -> llama` for coding or
+   `openai -> llama -> qwen` for general prompts, filtered by actor policy.
 6. The ledger creates the gateway request and chronological provider attempts.
    Retry and fallback share one absolute deadline.
 7. Provider adapters normalize output, provider request IDs, token usage, cached

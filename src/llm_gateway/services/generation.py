@@ -10,6 +10,7 @@ from time import perf_counter
 from uuid import UUID
 
 from llm_gateway.core.errors import ApiError
+from llm_gateway.core.task_routing import classify_task
 from llm_gateway.domain import GenerateCost, GenerateRequest, GenerateResponse, GenerateTokenUsage
 from llm_gateway.persistence.ledger import GatewayLedger, GatewayRoute, RouteBootstrap, UsageCost
 from llm_gateway.providers import (
@@ -119,11 +120,12 @@ class GenerationService:
         correlation_id: str,
         allowed_providers: tuple[str, ...] | None = None,
     ) -> GenerateResponse:
+        provider_order = self._ordered_providers(request)
         configured_routes = [
             route
             for route in (
                 self._ledger.resolve_route_for_provider(request.model, provider_name)
-                for provider_name in self._provider_order
+                for provider_name in provider_order
             )
             if route is not None
         ]
@@ -151,7 +153,6 @@ class GenerationService:
 
         started_at = perf_counter()
         started_at_wall = datetime.now(UTC)
-        deadline_at = started_at + self._timeout_seconds
         primary_route = routes[0]
         request_id, attempt_id = self._ledger.begin_generation(
             correlation_id=correlation_id,
@@ -159,12 +160,13 @@ class GenerationService:
             route=primary_route,
             started_at=started_at_wall,
         )
+        deadline_at = perf_counter() + self._timeout_seconds
         attempt_count = 0
         current_attempt_id = attempt_id
         last_error: ProviderError | None = None
 
         for route_index, route in enumerate(routes):
-            same_provider_attempts = 2 if route_index == 0 else 1
+            same_provider_attempts = 2 if route.provider_name == "openai" else 1
             for provider_attempt_index in range(same_provider_attempts):
                 if route_index != 0 or provider_attempt_index != 0:
                     remaining = deadline_at - perf_counter()
@@ -225,7 +227,9 @@ class GenerationService:
                 last_error = outcome
                 is_retryable = outcome.retryable and outcome.code != "provider_not_configured"
                 has_time_left = deadline_at - perf_counter() > 0
-                is_primary_retry_slot = route_index == 0 and provider_attempt_index == 0
+                is_primary_retry_slot = (
+                    route.provider_name == "openai" and provider_attempt_index == 0
+                )
                 should_retry_same_provider = (
                     is_retryable and has_time_left and is_primary_retry_slot
                 )
@@ -240,6 +244,18 @@ class GenerationService:
             last_error = ProviderUnavailableError("Provider is unavailable.")
         self._finalize_request_failure(request_id=request_id, error=last_error)
         raise _error_from_provider(last_error)
+
+    def _ordered_providers(self, request: GenerateRequest) -> tuple[str, ...]:
+        configured = set(self._provider_order)
+        local_order = (
+            ("qwen", "llama")
+            if classify_task(request.input) == "coding"
+            else (
+                "llama",
+                "qwen",
+            )
+        )
+        return tuple(provider for provider in ("openai", *local_order) if provider in configured)
 
     def _response_from_result(
         self,

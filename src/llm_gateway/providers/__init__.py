@@ -1,6 +1,5 @@
 """Provider abstraction and provider-facing errors."""
 
-from llm_gateway.providers.anthropic_messages import AnthropicMessagesProvider
 from llm_gateway.providers.errors import (
     ProviderAuthenticationError,
     ProviderBadRequestError,
@@ -10,7 +9,7 @@ from llm_gateway.providers.errors import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-from llm_gateway.providers.gemini_generate_content import GeminiGenerateContentProvider
+from llm_gateway.providers.ollama_generate import OllamaGenerateProvider
 from llm_gateway.providers.openai_responses import OpenAIResponsesProvider
 from llm_gateway.providers.protocol import (
     ChatCompletionProvider,
@@ -23,12 +22,11 @@ from llm_gateway.providers.protocol import (
 from llm_gateway.providers.testing import ProviderCall, ScriptedProvider
 
 __all__ = [
-    "AnthropicMessagesProvider",
     "ChatCompletionProvider",
-    "GeminiGenerateContentProvider",
     "GenerateProvider",
     "GenerateProviderContext",
     "GenerateProviderResult",
+    "OllamaGenerateProvider",
     "OpenAIResponsesProvider",
     "ProviderAuthenticationError",
     "ProviderBadRequestError",

@@ -67,15 +67,8 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=2048,
     )
-    anthropic_api_key: str | None = Field(default=None, min_length=1)
-    anthropic_base_url: str = Field(
-        default="https://api.anthropic.com/v1",
-        min_length=1,
-        max_length=2048,
-    )
-    gemini_api_key: str | None = Field(default=None, min_length=1)
-    gemini_base_url: str = Field(
-        default="https://generativelanguage.googleapis.com/v1beta",
+    ollama_base_url: str = Field(
+        default="http://127.0.0.1:11434",
         min_length=1,
         max_length=2048,
     )
@@ -103,53 +96,27 @@ class Settings(BaseSettings):
         default=Decimal("1.6000000000"),
         ge=0,
     )
-    generate_anthropic_enabled: bool = False
-    generate_anthropic_adapter: str = Field(
-        default="anthropic_messages",
+    generate_llama_enabled: bool = False
+    generate_llama_adapter: str = Field(
+        default="ollama_generate",
         min_length=1,
         max_length=128,
     )
-    generate_anthropic_upstream_model: str = Field(
-        default="claude-3-5-haiku-latest",
+    generate_llama_upstream_model: str = Field(
+        default="llama3.2:3b",
         min_length=1,
         max_length=255,
     )
-    generate_anthropic_currency: str = Field(default="USD", min_length=3, max_length=3)
-    generate_anthropic_input_cost_per_million: Decimal = Field(
-        default=Decimal("0.8000000000"),
-        ge=0,
-    )
-    generate_anthropic_cached_input_cost_per_million: Decimal = Field(
-        default=Decimal("0.0000000000"),
-        ge=0,
-    )
-    generate_anthropic_output_cost_per_million: Decimal = Field(
-        default=Decimal("4.0000000000"),
-        ge=0,
-    )
-    generate_gemini_enabled: bool = False
-    generate_gemini_adapter: str = Field(
-        default="gemini_generate_content",
+    generate_qwen_enabled: bool = False
+    generate_qwen_adapter: str = Field(
+        default="ollama_generate",
         min_length=1,
         max_length=128,
     )
-    generate_gemini_upstream_model: str = Field(
-        default="gemini-2.0-flash",
+    generate_qwen_upstream_model: str = Field(
+        default="qwen2.5-coder:3b",
         min_length=1,
         max_length=255,
-    )
-    generate_gemini_currency: str = Field(default="USD", min_length=3, max_length=3)
-    generate_gemini_input_cost_per_million: Decimal = Field(
-        default=Decimal("0.1000000000"),
-        ge=0,
-    )
-    generate_gemini_cached_input_cost_per_million: Decimal = Field(
-        default=Decimal("0.0000000000"),
-        ge=0,
-    )
-    generate_gemini_output_cost_per_million: Decimal = Field(
-        default=Decimal("0.4000000000"),
-        ge=0,
     )
     gateway_api_keys: tuple["GatewayApiKeyConfig", ...] = ()
     live_smoke_enabled: bool = False
@@ -184,7 +151,7 @@ class GatewayApiKeyConfig(BaseModel):
     key: str = Field(min_length=1, max_length=512)
     enabled: bool = True
     request_quota_limit: int | None = Field(default=None, ge=1)
-    allowed_providers: tuple[Literal["openai", "anthropic", "gemini"], ...] | None = None
+    allowed_providers: tuple[Literal["openai", "llama", "qwen"], ...] | None = None
 
 
 @lru_cache

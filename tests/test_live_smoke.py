@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from decimal import Decimal
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,6 +23,7 @@ SMOKE_INPUT_COST_PER_MILLION = Decimal("0.4000000000")
 SMOKE_CACHED_INPUT_COST_PER_MILLION = Decimal("0.1000000000")
 SMOKE_OUTPUT_COST_PER_MILLION = Decimal("1.6000000000")
 TOKENS_PER_MILLION = Decimal("1000000")
+SMOKE_GATEWAY_KEY = "phase2-live-smoke-gateway-key"
 
 pytestmark = pytest.mark.skipif(
     os.getenv("LLM_GATEWAY_LIVE_SMOKE") != "1",
@@ -42,6 +44,14 @@ def _live_settings(*, database_url: str, api_key: str) -> Settings:
         generate_openai_input_cost_per_million=SMOKE_INPUT_COST_PER_MILLION,
         generate_openai_cached_input_cost_per_million=SMOKE_CACHED_INPUT_COST_PER_MILLION,
         generate_openai_output_cost_per_million=SMOKE_OUTPUT_COST_PER_MILLION,
+        gateway_api_keys=(
+            {
+                "api_key_id": UUID("00000000-0000-0000-0000-000000000901"),
+                "actor_id": UUID("00000000-0000-0000-0000-000000000902"),
+                "key": SMOKE_GATEWAY_KEY,
+                "enabled": True,
+            },
+        ),
         live_smoke_enabled=True,
     )
 
@@ -78,6 +88,7 @@ def test_live_generate_smoke(tmp_path: Path) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/v1/generate",
+            headers={"Authorization": f"Bearer {SMOKE_GATEWAY_KEY}"},
             json={
                 "model": settings.generate_gateway_model,
                 "input": SMOKE_PROMPT,
@@ -89,7 +100,7 @@ def test_live_generate_smoke(tmp_path: Path) -> None:
     body = response.json()
     assert body["request_id"]
     assert body["output"]
-    assert body["provider"] == settings.generate_primary_provider_name
+    assert body["provider"] == "openai"
     assert body["model"] == settings.generate_gateway_model
     assert body["tokens"]["total_tokens"] >= 1
     assert body["cost"]["currency"] == settings.generate_openai_currency
@@ -124,6 +135,7 @@ def test_live_generate_auth_failure_probe(tmp_path: Path) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/v1/generate",
+            headers={"Authorization": f"Bearer {SMOKE_GATEWAY_KEY}"},
             json={
                 "model": settings.generate_gateway_model,
                 "input": "Respond with exactly: smoke-auth-failure",
