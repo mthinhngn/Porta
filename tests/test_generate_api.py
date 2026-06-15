@@ -13,6 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from llm_gateway.core.config import Settings
+from llm_gateway.core.errors import ApiError
 from llm_gateway.domain import GenerateRequest
 from llm_gateway.main import create_app
 from llm_gateway.persistence import (
@@ -246,6 +247,48 @@ def _client(
     client = TestClient(app)
     client.headers.update(AUTHORIZATION_HEADER)
     return client
+
+
+def test_lease_loss_before_persistence_creates_no_usage_row(tmp_path: Path) -> None:
+    provider = SequenceProvider(
+        "openai",
+        [
+            GenerateProviderResult(
+                output="must not be charged",
+                usage=ProviderTokenUsage(
+                    input_tokens=1,
+                    cached_input_tokens=0,
+                    output_tokens=1,
+                    total_tokens=2,
+                ),
+            )
+        ],
+    )
+    database_path = tmp_path / "lease-fence.sqlite3"
+    service = _service(database_path, {"openai": provider})
+    checks = iter((True, False))
+
+    async def lease_validator() -> bool:
+        return next(checks)
+
+    with pytest.raises(ApiError) as error:
+        asyncio.run(
+            service.generate(
+                GenerateRequest(model="gateway-default", input="lease fence"),
+                correlation_id="lease-fence",
+                lease_validator=lease_validator,
+            )
+        )
+
+    assert error.value.message == "Cache coordination was lost."
+    assert provider.calls == 1
+    engine = create_engine(f"sqlite:///{database_path}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        assert session.query(GatewayRequest).one().status == "failed"
+        assert session.query(ProviderAttempt).one().status == "failed"
+        assert session.query(UsageRecord).count() == 0
+    engine.dispose()
 
 
 def test_actor_provider_policy_stops_before_request_persistence(tmp_path: Path) -> None:

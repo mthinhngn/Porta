@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+import hashlib
+import json
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import perf_counter
+from typing import ParamSpec, TypeVar
 from uuid import UUID
 
 from llm_gateway.core.errors import ApiError
-from llm_gateway.core.task_routing import classify_task
+from llm_gateway.core.task_routing import TASK_ROUTING_VERSION, classify_task
 from llm_gateway.domain import GenerateCost, GenerateRequest, GenerateResponse, GenerateTokenUsage
 from llm_gateway.persistence.ledger import GatewayLedger, GatewayRoute, RouteBootstrap, UsageCost
 from llm_gateway.providers import (
@@ -24,6 +27,9 @@ from llm_gateway.providers import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
+
+P = ParamSpec("P")
+T = TypeVar("T")
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,22 +119,52 @@ class GenerationService:
         for config in self._bootstraps:
             self._ledger.ensure_r1_route(config)
 
+    @staticmethod
+    async def _run_ledger(callable_: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
+        task = asyncio.create_task(asyncio.to_thread(callable_, *args, **kwargs))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Database threads cannot be force-cancelled safely. Let the
+            # transaction settle before the request task can release its lease.
+            return await task
+
+    @property
+    def cache_namespace(self) -> str:
+        payload = {
+            "provider_order": self._provider_order,
+            "routes": [
+                {
+                    "provider": item.provider_name,
+                    "adapter": item.provider_adapter,
+                    "gateway_model": item.gateway_model,
+                    "upstream_model": item.upstream_model,
+                }
+                for item in self._bootstraps
+            ],
+            "task_routing_version": TASK_ROUTING_VERSION,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
     async def generate(
         self,
         request: GenerateRequest,
         *,
         correlation_id: str,
         allowed_providers: tuple[str, ...] | None = None,
+        lease_validator: Callable[[], Awaitable[bool]] | None = None,
     ) -> GenerateResponse:
         provider_order = self._ordered_providers(request)
-        configured_routes = [
-            route
-            for route in (
-                self._ledger.resolve_route_for_provider(request.model, provider_name)
-                for provider_name in provider_order
+        resolved_routes = [
+            await self._run_ledger(
+                self._ledger.resolve_route_for_provider,
+                request.model,
+                provider_name,
             )
-            if route is not None
+            for provider_name in provider_order
         ]
+        configured_routes = [route for route in resolved_routes if route is not None]
         if not configured_routes:
             raise ApiError(
                 message="Model is unavailable.",
@@ -154,7 +190,8 @@ class GenerationService:
         started_at = perf_counter()
         started_at_wall = datetime.now(UTC)
         primary_route = routes[0]
-        request_id, attempt_id = self._ledger.begin_generation(
+        request_id, attempt_id = await self._run_ledger(
+            self._ledger.begin_generation,
             correlation_id=correlation_id,
             requested_model=request.model,
             route=primary_route,
@@ -172,22 +209,41 @@ class GenerationService:
                     remaining = deadline_at - perf_counter()
                     if remaining <= 0:
                         timeout_error = ProviderTimeoutError("Provider request timed out.")
-                        self._finalize_request_failure(
+                        await self._finalize_request_failure(
                             request_id=request_id,
                             error=timeout_error,
                         )
                         raise _error_from_provider(timeout_error)
-                    current_attempt_id = self._ledger.begin_attempt(
+                    current_attempt_id = await self._run_ledger(
+                        self._ledger.begin_attempt,
                         gateway_request_id=request_id,
                         route=route,
                         started_at=datetime.now(UTC),
                     )
 
                 attempt_count += 1
+                if lease_validator is not None and not await lease_validator():
+                    coordination_error = ProviderUnavailableError(
+                        "Cache coordination was lost.",
+                        code="cache_coordination_lost",
+                    )
+                    await self._finalize_failure(
+                        request_id=request_id,
+                        attempt_id=current_attempt_id,
+                        latency_started_at=perf_counter(),
+                        error=coordination_error,
+                        attempt_status="failed",
+                    )
+                    raise ApiError(
+                        message="Cache coordination was lost.",
+                        type="server_error",
+                        status_code=503,
+                        code="service_unavailable",
+                    )
                 remaining = deadline_at - perf_counter()
                 if remaining <= 0:
                     timeout_error = ProviderTimeoutError("Provider request timed out.")
-                    self._finalize_failure(
+                    await self._finalize_failure(
                         request_id=request_id,
                         attempt_id=current_attempt_id,
                         latency_started_at=perf_counter(),
@@ -205,7 +261,25 @@ class GenerationService:
                     timeout_seconds=min(self._timeout_seconds, remaining),
                 )
                 if isinstance(outcome, _ResolvedAttempt):
-                    usage_cost = self._persist_success(
+                    if lease_validator is not None and not await lease_validator():
+                        coordination_error = ProviderUnavailableError(
+                            "Cache coordination was lost.",
+                            code="cache_coordination_lost",
+                        )
+                        await self._finalize_failure(
+                            request_id=request_id,
+                            attempt_id=current_attempt_id,
+                            latency_started_at=perf_counter(),
+                            error=coordination_error,
+                            attempt_status="failed",
+                        )
+                        raise ApiError(
+                            message="Cache coordination was lost.",
+                            type="server_error",
+                            status_code=503,
+                            code="service_unavailable",
+                        )
+                    usage_cost = await self._persist_success(
                         request_id=request_id,
                         attempt=outcome,
                     )
@@ -236,13 +310,13 @@ class GenerationService:
                 if should_retry_same_provider:
                     continue
                 if not is_retryable:
-                    self._finalize_request_failure(request_id=request_id, error=outcome)
+                    await self._finalize_request_failure(request_id=request_id, error=outcome)
                     raise _error_from_provider(outcome)
                 break
 
         if last_error is None:
             last_error = ProviderUnavailableError("Provider is unavailable.")
-        self._finalize_request_failure(request_id=request_id, error=last_error)
+        await self._finalize_request_failure(request_id=request_id, error=last_error)
         raise _error_from_provider(last_error)
 
     def _ordered_providers(self, request: GenerateRequest) -> tuple[str, ...]:
@@ -307,7 +381,7 @@ class GenerationService:
                 "Provider is unavailable.",
                 code="provider_not_configured",
             )
-            self._finalize_intermediate_attempt(
+            await self._finalize_intermediate_attempt(
                 request_id=request_id,
                 attempt_id=attempt_id,
                 latency_started_at=started_at,
@@ -329,7 +403,7 @@ class GenerationService:
                 result = await provider.generate(request, context)
         except TimeoutError:
             provider_error = ProviderTimeoutError("Provider request timed out.")
-            self._finalize_intermediate_attempt(
+            await self._finalize_intermediate_attempt(
                 request_id=request_id,
                 attempt_id=attempt_id,
                 latency_started_at=started_at,
@@ -339,7 +413,7 @@ class GenerationService:
             return provider_error
         except ProviderError as error:
             attempt_status = "timed_out" if isinstance(error, ProviderTimeoutError) else "failed"
-            self._finalize_intermediate_attempt(
+            await self._finalize_intermediate_attempt(
                 request_id=request_id,
                 attempt_id=attempt_id,
                 latency_started_at=started_at,
@@ -349,7 +423,7 @@ class GenerationService:
             return error
         except Exception:
             unexpected_provider_error = ProviderUnavailableError("Provider request failed.")
-            self._finalize_intermediate_attempt(
+            await self._finalize_intermediate_attempt(
                 request_id=request_id,
                 attempt_id=attempt_id,
                 latency_started_at=started_at,
@@ -364,7 +438,7 @@ class GenerationService:
             latency_ms=round((perf_counter() - started_at) * 1000),
         )
 
-    def _persist_success(
+    async def _persist_success(
         self,
         *,
         request_id: UUID,
@@ -372,7 +446,8 @@ class GenerationService:
     ) -> UsageCost:
         completed_at = datetime.now(UTC)
         try:
-            return self._ledger.complete_generation(
+            return await self._run_ledger(
+                self._ledger.complete_generation,
                 gateway_request_id=request_id,
                 attempt_id=attempt.attempt_id,
                 route=attempt.route,
@@ -383,7 +458,8 @@ class GenerationService:
             )
         except Exception:
             try:
-                return self._ledger.reconcile_generation_success(
+                return await self._run_ledger(
+                    self._ledger.reconcile_generation_success,
                     gateway_request_id=request_id,
                     attempt_id=attempt.attempt_id,
                     route=attempt.route,
@@ -413,7 +489,7 @@ class GenerationService:
             return "retry_after_error"
         return "configured_single_path"
 
-    def _finalize_intermediate_attempt(
+    async def _finalize_intermediate_attempt(
         self,
         *,
         request_id: UUID,
@@ -425,7 +501,8 @@ class GenerationService:
         latency_ms = round((perf_counter() - latency_started_at) * 1000)
         persisted_error = _error_for_persistence(error)
         try:
-            self._ledger.fail_attempt(
+            await self._run_ledger(
+                self._ledger.fail_attempt,
                 request_id=request_id,
                 attempt_id=attempt_id,
                 attempt_status=attempt_status,
@@ -436,7 +513,7 @@ class GenerationService:
         except Exception:
             return
 
-    def _finalize_failure(
+    async def _finalize_failure(
         self,
         *,
         request_id: UUID,
@@ -448,7 +525,8 @@ class GenerationService:
         latency_ms = round((perf_counter() - latency_started_at) * 1000)
         persisted_error = _error_for_persistence(error)
         try:
-            self._ledger.fail_generation(
+            await self._run_ledger(
+                self._ledger.fail_generation,
                 request_id=request_id,
                 attempt_id=attempt_id,
                 attempt_status=attempt_status,
@@ -461,7 +539,7 @@ class GenerationService:
             # another worker already made the generation terminal.
             return
 
-    def _finalize_request_failure(
+    async def _finalize_request_failure(
         self,
         *,
         request_id: UUID,
@@ -469,35 +547,11 @@ class GenerationService:
     ) -> None:
         persisted_error = _error_for_persistence(error)
         try:
-            self._ledger.fail_request(
+            await self._run_ledger(
+                self._ledger.fail_request,
                 request_id=request_id,
                 error=persisted_error,
                 completed_at=datetime.now(UTC),
             )
         except Exception:
             return
-
-    def _fail_with_api_error(
-        self,
-        *,
-        request_id: UUID,
-        attempt_id: UUID,
-        latency_started_at: float,
-        error: ProviderError,
-        status_code: int,
-        message: str,
-        code: str,
-    ) -> GenerateResponse:
-        self._finalize_failure(
-            request_id=request_id,
-            attempt_id=attempt_id,
-            latency_started_at=latency_started_at,
-            error=error,
-            attempt_status="failed",
-        )
-        raise ApiError(
-            message=message,
-            type="server_error",
-            status_code=status_code,
-            code=code,
-        )

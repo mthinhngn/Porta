@@ -7,7 +7,7 @@ from functools import lru_cache
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -143,6 +143,16 @@ class Settings(BaseSettings):
         if len(decoded) != 32:
             raise ValueError("cache encryption key must decode to exactly 32 bytes")
         return value
+
+    @model_validator(mode="after")
+    def validate_gateway_api_key_uniqueness(self) -> "Settings":
+        keys = [item.key for item in self.gateway_api_keys]
+        api_key_ids = [item.api_key_id for item in self.gateway_api_keys]
+        if len(keys) != len(set(keys)):
+            raise ValueError("gateway API keys must be unique")
+        if len(api_key_ids) != len(set(api_key_ids)):
+            raise ValueError("gateway API key IDs must be unique")
+        return self
 
 
 class GatewayApiKeyConfig(BaseModel):

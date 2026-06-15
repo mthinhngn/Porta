@@ -6,6 +6,7 @@ import re
 from typing import Literal
 
 TaskKind = Literal["coding", "general"]
+TASK_ROUTING_VERSION = "phase2-local-v1"
 
 _CODE_FENCE = re.compile(r"```")
 _STACK_TRACE = re.compile(r"(?im)^\s*(traceback|at\s+\S+\s+\(.+:\d+\)|file\s+\".+\",\s+line\s+\d+)")

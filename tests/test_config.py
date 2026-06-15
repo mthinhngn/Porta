@@ -75,3 +75,35 @@ def test_cache_encryption_key_requires_32_base64_encoded_bytes() -> None:
 
     with pytest.raises(ValidationError, match="exactly 32 bytes"):
         Settings(gateway_cache_encryption_key=base64.urlsafe_b64encode(b"short").decode())
+
+
+def test_gateway_api_key_values_and_ids_must_be_unique() -> None:
+    first = {
+        "api_key_id": "00000000-0000-0000-0000-000000000101",
+        "actor_id": "00000000-0000-0000-0000-000000000201",
+        "key": "shared-key",
+    }
+
+    with pytest.raises(ValidationError, match="gateway API keys must be unique"):
+        Settings(
+            gateway_api_keys=(
+                first,
+                {
+                    "api_key_id": "00000000-0000-0000-0000-000000000102",
+                    "actor_id": "00000000-0000-0000-0000-000000000202",
+                    "key": "shared-key",
+                },
+            )
+        )
+
+    with pytest.raises(ValidationError, match="gateway API key IDs must be unique"):
+        Settings(
+            gateway_api_keys=(
+                first,
+                {
+                    "api_key_id": "00000000-0000-0000-0000-000000000101",
+                    "actor_id": "00000000-0000-0000-0000-000000000202",
+                    "key": "different-key",
+                },
+            )
+        )

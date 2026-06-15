@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 from typing import Final
 
@@ -64,7 +65,7 @@ def authenticate_gateway_request(
         )
 
     for candidate in settings.gateway_api_keys:
-        if candidate.key != token:
+        if not secrets.compare_digest(candidate.key, token):
             continue
         if not candidate.enabled:
             return GatewayAuthResult(

@@ -74,8 +74,9 @@ must still report the provider that produced the cached result.
 ### Cache contract
 
 - Cache scope is per actor.
-- Cache key material is:
-  `actor_id + normalized request fingerprint + resolved gateway model + guardrail_version`.
+- Cache key material includes actor identity, a keyed request HMAC, resolved
+  gateway model, guardrail version, actor provider policy, and routing
+  configuration version.
 - Only successful normalized gateway responses may be cached.
 - Blocked, failed, timed out, partial, or malformed upstream outcomes must not
   populate the cache.
@@ -84,8 +85,13 @@ must still report the provider that produced the cached result.
 - Cache storage must not expose raw prompt text, generated output, or secrets in
   keys or values.
 - Cache values are encrypted with an operator-supplied 256-bit key.
-- Identical concurrent misses for the same actor and request use one short-lived
-  Redis reservation so only one provider execution and usage record can win.
+- Identical concurrent misses use a fail-closed Redis execution lock. The lock
+  does not expire while work is active and only its owner may publish and
+  release it, so persistence cannot race an automatic takeover. A lock left by
+  a terminated process requires operator cleanup rather than risking duplicate
+  provider execution or accounting. Redis administrators are trusted to remove
+  stale locks only after confirming that the owning gateway worker is gone;
+  forced lock mutation during active work is outside the runtime threat model.
 
 ### Guardrail contract
 

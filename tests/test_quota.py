@@ -117,14 +117,25 @@ class StubQuotaRedisClient:
         return True
 
     async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
-        assert numkeys == 1
         if script != QUOTA_INCREMENT_SCRIPT:
+            if numkeys == 2:
+                lock_key = str(keys_and_args[0])
+                cache_key = str(keys_and_args[1])
+                owner = str(keys_and_args[2])
+                payload = str(keys_and_args[3])
+                if self._cache.get(lock_key) != owner:
+                    return 0
+                self._cache[cache_key] = payload
+                return 1
+            assert numkeys == 1
             key = str(keys_and_args[0])
             owner = str(keys_and_args[1])
-            if self._cache.get(key) == owner:
+            if self._cache.get(key) != owner:
+                return 0
+            if 'redis.call("del"' in script:
                 del self._cache[key]
-                return 1
-            return 0
+            return 1
+        assert numkeys == 1
         key = str(keys_and_args[0])
         limit = int(keys_and_args[1])
         async with self._lock:

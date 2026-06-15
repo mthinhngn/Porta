@@ -256,6 +256,6 @@ def test_generate_allowed_request_still_reaches_quota_cache_and_provider(tmp_pat
     assert response.status_code == 200
     assert response.json()["output"] == "should not run"
     assert provider.calls == 1
-    assert redis_client.eval_calls == 2
+    assert redis_client.eval_calls == 5
     assert redis_client.get_calls == 1
-    assert redis_client.set_calls == 2
+    assert redis_client.set_calls == 1

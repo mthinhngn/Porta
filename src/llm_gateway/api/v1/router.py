@@ -1,5 +1,8 @@
 """Version 1 route composition."""
 
+import asyncio
+from contextlib import suppress
+
 from fastapi import APIRouter, Request
 
 from llm_gateway.core.auth import authenticated_actor
@@ -46,7 +49,7 @@ def _response_cache(request: Request) -> RedisResponseCache | None:
             ttl_seconds=settings.gateway_cache_ttl_seconds,
             guardrail_version=settings.gateway_guardrail_version,
             encryption_key=encryption_key.get_secret_value(),
-            lock_ttl_seconds=max(1, round(settings.provider_timeout_seconds) + 5),
+            lock_ttl_seconds=max(60, round(settings.provider_timeout_seconds) + 60),
             wait_timeout_seconds=settings.provider_timeout_seconds + 5,
         ),
     )
@@ -92,24 +95,74 @@ async def generate(payload: GenerateRequest, request: Request) -> GenerateRespon
         await enforcer.enforce(policy)
     response_cache = _response_cache(request)
     reservation = None
+    lease_task = None
     if response_cache is not None:
         lookup = await response_cache.get_or_reserve(
             actor_id=actor.actor_id,
             resolved_model=payload.model,
             request=payload,
+            routing_namespace=service.cache_namespace,
+            allowed_providers=actor.allowed_providers,
         )
         if lookup.response is not None:
             return lookup.response
         reservation = lookup.reservation
+        if reservation is not None:
+            lease_task = asyncio.create_task(response_cache.maintain(reservation))
     try:
-        response = await service.generate(
-            payload,
-            correlation_id=correlation_id,
-            allowed_providers=actor.allowed_providers,
+        generation_task = asyncio.create_task(
+            service.generate(
+                payload,
+                correlation_id=correlation_id,
+                allowed_providers=actor.allowed_providers,
+                lease_validator=(
+                    (lambda: response_cache.refresh(reservation))
+                    if response_cache is not None and reservation is not None
+                    else None
+                ),
+            )
         )
+        if lease_task is not None:
+            try:
+                completed, _ = await asyncio.wait(
+                    {generation_task, lease_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            except asyncio.CancelledError:
+                # A client disconnect must not release the cache lease while a
+                # ledger thread can still commit usage.
+                with suppress(Exception):
+                    await asyncio.shield(generation_task)
+                raise
+            if lease_task in completed:
+                lease_error = lease_task.exception()
+                with suppress(Exception):
+                    await asyncio.shield(generation_task)
+                if lease_error is not None:
+                    raise lease_error
+                raise ApiError(
+                    message="Cache coordination was lost.",
+                    type="server_error",
+                    status_code=503,
+                    code="service_unavailable",
+                )
+        response = await generation_task
         if response_cache is not None and reservation is not None:
-            await response_cache.put(reservation=reservation, response=response)
+            publication_task = asyncio.create_task(
+                response_cache.put(reservation=reservation, response=response)
+            )
+            try:
+                await asyncio.shield(publication_task)
+            except asyncio.CancelledError:
+                # Do not release ownership until the atomic publication has
+                # either committed or definitively failed.
+                await publication_task
+                raise
         return response
     finally:
+        if lease_task is not None:
+            lease_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await lease_task
         if response_cache is not None and reservation is not None:
             await response_cache.release(reservation)

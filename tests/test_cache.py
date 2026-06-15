@@ -6,13 +6,17 @@ from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from pathlib import Path
 from threading import Lock
+from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from llm_gateway.core.cache import CachePolicy, RedisResponseCache
 from llm_gateway.core.config import Settings
-from llm_gateway.domain import GenerateRequest
+from llm_gateway.core.errors import ApiError
+from llm_gateway.domain import GenerateRequest, GenerateResponse
 from llm_gateway.main import create_app
 from llm_gateway.persistence import (
     Base,
@@ -98,13 +102,25 @@ class StubCacheRedisClient:
         return True
 
     async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
-        assert numkeys == 1
-        key, owner = keys_and_args
-        assert isinstance(key, str)
-        assert isinstance(owner, str)
+        assert numkeys in {1, 2}
         with self._lock:
+            if numkeys == 2:
+                lock_key, cache_key, owner, payload, _ttl = keys_and_args
+                assert isinstance(lock_key, str)
+                assert isinstance(cache_key, str)
+                assert isinstance(owner, str)
+                assert isinstance(payload, str)
+                if self.values.get(lock_key) != owner:
+                    return 0
+                self.values[cache_key] = payload
+                return 1
+            key, owner, *rest = keys_and_args
+            assert isinstance(key, str)
+            assert isinstance(owner, str)
             if self.values.get(key) != owner:
                 return 0
+            if rest or 'redis.call("del"' not in script:
+                return 1
             del self.values[key]
             return 1
 
@@ -115,6 +131,8 @@ class StubCacheRedisClient:
 def _service(
     database_path: Path,
     provider_registry: dict[str, GenerateProvider],
+    *,
+    upstream_model: str = "gpt-4.1-mini",
 ) -> GenerationService:
     engine = create_engine(f"sqlite:///{database_path}")
     Base.metadata.create_all(engine)
@@ -130,7 +148,7 @@ def _service(
                 provider_name="openai",
                 provider_adapter="openai_responses",
                 gateway_model="gateway-default",
-                upstream_model="gpt-4.1-mini",
+                upstream_model=upstream_model,
                 currency="USD",
                 input_cost_per_million=Decimal("0.4000000000"),
                 cached_input_cost_per_million=Decimal("0.1000000000"),
@@ -146,6 +164,9 @@ def _client(
     tmp_path: Path,
     redis_client: StubCacheRedisClient,
     provider: CountingProvider,
+    *,
+    actor_a_allowed_providers: tuple[str, ...] | None = None,
+    upstream_model: str = "gpt-4.1-mini",
 ) -> TestClient:
     settings = Settings(
         environment="test",
@@ -158,6 +179,7 @@ def _client(
                 "actor_id": "00000000-0000-0000-0000-000000000201",
                 "key": "test-gateway-key-a",
                 "enabled": True,
+                "allowed_providers": actor_a_allowed_providers,
             },
             {
                 "api_key_id": "00000000-0000-0000-0000-000000000102",
@@ -169,7 +191,11 @@ def _client(
     )
     app = create_app(
         settings,
-        generation_service=_service(tmp_path / "cache.sqlite3", {"openai": provider}),
+        generation_service=_service(
+            tmp_path / "cache.sqlite3",
+            {"openai": provider},
+            upstream_model=upstream_model,
+        ),
         redis_client=redis_client,
     )
     return TestClient(app)
@@ -293,3 +319,121 @@ def test_provider_failure_writes_no_cache_value_or_usage(tmp_path: Path) -> None
         assert session.query(ProviderAttempt).count() == 2
         assert session.query(UsageRecord).count() == 0
     engine.dispose()
+
+
+def test_cache_does_not_bypass_updated_actor_provider_policy(tmp_path: Path) -> None:
+    redis_client = StubCacheRedisClient()
+    provider = CountingProvider()
+    request = {"model": "gateway-default", "input": "Policy-sensitive hello"}
+    headers = {"Authorization": "Bearer test-gateway-key-a"}
+
+    with _client(tmp_path, redis_client, provider) as client:
+        first = client.post("/v1/generate", headers=headers, json=request)
+    with _client(
+        tmp_path,
+        redis_client,
+        provider,
+        actor_a_allowed_providers=("qwen",),
+    ) as client:
+        second = client.post("/v1/generate", headers=headers, json=request)
+
+    assert first.status_code == 200
+    assert second.status_code == 403
+    assert second.json()["error"]["code"] == "provider_access_denied"
+    assert provider.calls == 1
+
+
+def test_cache_namespace_changes_when_upstream_model_changes(tmp_path: Path) -> None:
+    redis_client = StubCacheRedisClient()
+    provider = CountingProvider()
+    request = {"model": "gateway-default", "input": "Routing-sensitive hello"}
+    headers = {"Authorization": "Bearer test-gateway-key-a"}
+
+    with _client(tmp_path, redis_client, provider, upstream_model="gpt-first") as client:
+        first = client.post("/v1/generate", headers=headers, json=request)
+    with _client(tmp_path, redis_client, provider, upstream_model="gpt-second") as client:
+        second = client.post("/v1/generate", headers=headers, json=request)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["served_from_cache"] is False
+    assert second.json()["served_from_cache"] is False
+    assert provider.calls == 2
+
+
+def test_expired_reservation_cannot_publish_over_new_owner() -> None:
+    redis_client = StubCacheRedisClient()
+    cache = RedisResponseCache(
+        redis_client,
+        policy=CachePolicy(
+            ttl_seconds=60,
+            guardrail_version="test-v1",
+            encryption_key=base64.urlsafe_b64encode(b"k" * 32).decode(),
+            lock_ttl_seconds=60,
+            wait_timeout_seconds=1,
+        ),
+    )
+    request = GenerateRequest(model="gateway-default", input="Do not publish stale work")
+
+    async def exercise() -> None:
+        lookup = await cache.get_or_reserve(
+            actor_id=UUID("00000000-0000-0000-0000-000000000201"),
+            resolved_model=request.model,
+            request=request,
+            routing_namespace="route-v1",
+            allowed_providers=None,
+        )
+        assert lookup.reservation is not None
+        redis_client.values[lookup.reservation.lock_key] = "new-owner"
+        with pytest.raises(ApiError) as error:
+            await cache.put(
+                reservation=lookup.reservation,
+                response=GenerateResponse(
+                    request_id=UUID("00000000-0000-0000-0000-000000000301"),
+                    output="stale output",
+                    provider="openai",
+                    model="gateway-default",
+                    tokens={"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+                    cost={"amount": "0.01", "currency": "USD"},
+                    routing_reason="configured_single_path",
+                    cache_status="miss",
+                    served_from_cache=False,
+                    attempt_count=1,
+                    latency_ms=1,
+                ),
+            )
+        assert error.value.message == "Cache coordination was lost."
+        assert lookup.reservation.key not in redis_client.values
+
+    asyncio.run(exercise())
+
+
+def test_cache_lease_loss_is_reported_to_owner() -> None:
+    redis_client = StubCacheRedisClient()
+    cache = RedisResponseCache(
+        redis_client,
+        policy=CachePolicy(
+            ttl_seconds=60,
+            guardrail_version="test-v1",
+            encryption_key=base64.urlsafe_b64encode(b"k" * 32).decode(),
+            lock_ttl_seconds=1,
+            wait_timeout_seconds=1,
+        ),
+    )
+    request = GenerateRequest(model="gateway-default", input="lease loss")
+
+    async def exercise() -> None:
+        lookup = await cache.get_or_reserve(
+            actor_id=UUID("00000000-0000-0000-0000-000000000201"),
+            resolved_model=request.model,
+            request=request,
+            routing_namespace="route-v1",
+            allowed_providers=None,
+        )
+        assert lookup.reservation is not None
+        redis_client.values[lookup.reservation.lock_key] = "new-owner"
+        with pytest.raises(ApiError) as error:
+            await cache.maintain(lookup.reservation)
+        assert error.value.message == "Cache coordination was lost."
+
+    asyncio.run(exercise())
