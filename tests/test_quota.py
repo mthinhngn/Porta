@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
@@ -87,21 +88,43 @@ class StubQuotaRedisClient:
         self._values: dict[str, int] = {}
         self._cache: dict[str, str] = {}
         self._lock = asyncio.Lock()
+        self.get_calls = 0
 
     async def ping(self) -> bool:
         return True
 
     async def get(self, name: str) -> object:
+        self.get_calls += 1
         return self._cache.get(name)
 
-    async def set(self, name: str, value: object, ex: int | None = None) -> object:
+    async def delete(self, *names: str) -> int:
+        deleted = sum(name in self._cache for name in names)
+        for name in names:
+            self._cache.pop(name, None)
+        return deleted
+
+    async def set(
+        self,
+        name: str,
+        value: object,
+        ex: int | None = None,
+        nx: bool = False,
+    ) -> object:
         assert isinstance(value, str)
+        if nx and name in self._cache:
+            return False
         self._cache[name] = value
         return True
 
     async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
-        assert script == QUOTA_INCREMENT_SCRIPT
         assert numkeys == 1
+        if script != QUOTA_INCREMENT_SCRIPT:
+            key = str(keys_and_args[0])
+            owner = str(keys_and_args[1])
+            if self._cache.get(key) == owner:
+                del self._cache[key]
+                return 1
+            return 0
         key = str(keys_and_args[0])
         limit = int(keys_and_args[1])
         async with self._lock:
@@ -131,6 +154,7 @@ def _quota_client(
     redis_client: StubQuotaRedisClient,
     *,
     request_quota_limit: int,
+    cache_enabled: bool = False,
 ) -> TestClient:
     provider = StubProvider(
         GenerateProviderResult(
@@ -147,6 +171,9 @@ def _quota_client(
         environment="test",
         log_level="INFO",
         redis_url="redis://example.test:6379/0",
+        gateway_cache_encryption_key=(
+            base64.urlsafe_b64encode(b"q" * 32).decode() if cache_enabled else None
+        ),
         gateway_api_keys=(
             {
                 "api_key_id": "00000000-0000-0000-0000-000000000101",
@@ -170,7 +197,12 @@ def _quota_client(
 def test_generate_quota_rejects_over_limit_before_provider_or_usage(tmp_path: Path) -> None:
     redis_client = StubQuotaRedisClient()
 
-    with _quota_client(tmp_path, redis_client, request_quota_limit=1) as client:
+    with _quota_client(
+        tmp_path,
+        redis_client,
+        request_quota_limit=1,
+        cache_enabled=True,
+    ) as client:
         first = client.post("/v1/generate", json={"model": "gateway-default", "input": "hello"})
         second = client.post("/v1/generate", json={"model": "gateway-default", "input": "hello"})
 
@@ -182,6 +214,7 @@ def test_generate_quota_rejects_over_limit_before_provider_or_usage(tmp_path: Pa
         "param": None,
         "code": "quota_exceeded",
     }
+    assert redis_client.get_calls == 1
 
     engine = create_engine(f"sqlite:///{tmp_path / 'quota.sqlite3'}")
     sessions = sessionmaker(bind=engine, expire_on_commit=False)

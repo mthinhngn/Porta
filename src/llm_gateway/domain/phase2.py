@@ -15,6 +15,7 @@ class AuthenticatedActor(ContractModel):
     api_key_id: UUID
     enabled: bool
     request_quota_limit: Annotated[int | None, Field(ge=1)] = None
+    allowed_providers: tuple[Literal["openai", "anthropic", "gemini"], ...] | None = None
 
 
 class GuardrailDecision(ContractModel):

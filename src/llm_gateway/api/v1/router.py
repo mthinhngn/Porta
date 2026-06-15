@@ -37,11 +37,17 @@ def _response_cache(request: Request) -> RedisResponseCache | None:
     if redis_client is None:
         return None
     settings = request.app.state.settings
+    encryption_key = settings.gateway_cache_encryption_key
+    if encryption_key is None:
+        return None
     return RedisResponseCache(
         redis_client,
         policy=CachePolicy(
             ttl_seconds=settings.gateway_cache_ttl_seconds,
             guardrail_version=settings.gateway_guardrail_version,
+            encryption_key=encryption_key.get_secret_value(),
+            lock_ttl_seconds=max(1, round(settings.provider_timeout_seconds) + 5),
+            wait_timeout_seconds=settings.provider_timeout_seconds + 5,
         ),
     )
 
@@ -85,20 +91,25 @@ async def generate(payload: GenerateRequest, request: Request) -> GenerateRespon
             )
         await enforcer.enforce(policy)
     response_cache = _response_cache(request)
+    reservation = None
     if response_cache is not None:
-        cached_response = await response_cache.get(
+        lookup = await response_cache.get_or_reserve(
             actor_id=actor.actor_id,
             resolved_model=payload.model,
             request=payload,
         )
-        if cached_response is not None:
-            return cached_response
-    response = await service.generate(payload, correlation_id=correlation_id)
-    if response_cache is not None:
-        await response_cache.put(
-            actor_id=actor.actor_id,
-            resolved_model=response.model,
-            request=payload,
-            response=response,
+        if lookup.response is not None:
+            return lookup.response
+        reservation = lookup.reservation
+    try:
+        response = await service.generate(
+            payload,
+            correlation_id=correlation_id,
+            allowed_providers=actor.allowed_providers,
         )
-    return response
+        if response_cache is not None and reservation is not None:
+            await response_cache.put(reservation=reservation, response=response)
+        return response
+    finally:
+        if response_cache is not None and reservation is not None:
+            await response_cache.release(reservation)

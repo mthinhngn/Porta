@@ -13,7 +13,15 @@ class RedisClient(Protocol):
 
     async def get(self, name: str) -> object: ...
 
-    async def set(self, name: str, value: object, ex: int | None = None) -> object: ...
+    async def delete(self, *names: str) -> int: ...
+
+    async def set(
+        self,
+        name: str,
+        value: object,
+        ex: int | None = None,
+        nx: bool = False,
+    ) -> object: ...
 
     async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object: ...
 

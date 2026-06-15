@@ -79,6 +79,7 @@ def authenticate_gateway_request(
                 api_key_id=candidate.api_key_id,
                 enabled=True,
                 request_quota_limit=candidate.request_quota_limit,
+                allowed_providers=candidate.allowed_providers,
             )
         )
 

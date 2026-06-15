@@ -117,8 +117,9 @@ class GenerationService:
         request: GenerateRequest,
         *,
         correlation_id: str,
+        allowed_providers: tuple[str, ...] | None = None,
     ) -> GenerateResponse:
-        routes = [
+        configured_routes = [
             route
             for route in (
                 self._ledger.resolve_route_for_provider(request.model, provider_name)
@@ -126,13 +127,26 @@ class GenerationService:
             )
             if route is not None
         ]
-        if not routes:
+        if not configured_routes:
             raise ApiError(
                 message="Model is unavailable.",
                 type="invalid_request_error",
                 status_code=400,
                 param="model",
                 code="model_not_found",
+            )
+        allowed = set(allowed_providers) if allowed_providers is not None else None
+        routes = [
+            route
+            for route in configured_routes
+            if allowed is None or route.provider_name in allowed
+        ]
+        if not routes:
+            raise ApiError(
+                message="Provider access is not allowed.",
+                type="invalid_request_error",
+                status_code=403,
+                code="provider_access_denied",
             )
 
         started_at = perf_counter()

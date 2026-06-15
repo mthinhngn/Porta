@@ -83,6 +83,9 @@ must still report the provider that produced the cached result.
   `guardrail_version` change.
 - Cache storage must not expose raw prompt text, generated output, or secrets in
   keys or values.
+- Cache values are encrypted with an operator-supplied 256-bit key.
+- Identical concurrent misses for the same actor and request use one short-lived
+  Redis reservation so only one provider execution and usage record can win.
 
 ### Guardrail contract
 
@@ -156,18 +159,25 @@ Provider SDK and persistence types never cross the public HTTP boundary.
 
 ## Request lifecycle
 
-1. FastAPI validates the request and binds a safe correlation ID.
-2. The service resolves the gateway model to the single configured
-   provider/model mapping. There is no routing policy or fallback selection.
-3. The ledger atomically creates the gateway request and first provider attempt
-   as `in_progress` with one shared start timestamp.
-4. The OpenAI adapter sends a Responses API request with `store=false`.
-5. The adapter normalizes output, provider request ID, token usage, cached input
-   tokens, and provider errors.
-6. On success, one transaction selects the effective pricing snapshot, computes
-   cost, inserts one usage record, and marks request and attempt succeeded.
-7. On provider failure, one transaction records a sanitized terminal error and
-   writes no usage.
+1. Authentication resolves one actor from the gateway API key before request
+   validation reaches the generation handler.
+2. Guardrails evaluate the normalized request before quota, cache, persistence,
+   or provider execution.
+3. The actor quota is consumed before the actor-scoped, guardrail-version-scoped
+   cache is checked.
+4. A cache hit returns the encrypted cached response without provider execution
+   or new accounting. A miss obtains a short-lived per-key reservation.
+5. The service resolves eligible routes in `openai`, `anthropic`, then `gemini`
+   order, filtered by the actor provider policy.
+6. The ledger creates the gateway request and chronological provider attempts.
+   Retry and fallback share one absolute deadline.
+7. Provider adapters normalize output, provider request IDs, token usage, cached
+   input tokens, and sanitized provider errors.
+8. On success, one transaction selects pricing, computes cost, inserts exactly
+   one usage record for the winning attempt, and marks the request succeeded.
+   The normalized response is encrypted and cached after persistence succeeds.
+9. On provider failure, the ledger records sanitized terminal errors, creates no
+   usage row, and writes no cache entry.
 
 Successful completion is valid only for the matching in-progress request and
 attempt. A unique usage-to-attempt constraint prevents duplicate charging.

@@ -1,11 +1,13 @@
 """Validated application configuration."""
 
+import base64
+import binascii
 from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -52,6 +54,7 @@ class Settings(BaseSettings):
     provider_timeout_seconds: float = Field(default=30.0, gt=0)
     gateway_quota_window_seconds: int = Field(default=60, ge=1)
     gateway_cache_ttl_seconds: int = Field(default=300, ge=1)
+    gateway_cache_encryption_key: SecretStr | None = None
     gateway_guardrail_version: str = Field(default="phase2-v1", min_length=1, max_length=64)
     gateway_guardrail_test_block_token: str = Field(
         default="BLOCK_ME_PHASE2",
@@ -76,7 +79,6 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=2048,
     )
-    generate_primary_provider_name: str = Field(default="openai", min_length=1, max_length=128)
     generate_primary_provider_adapter: str = Field(
         default="openai_responses",
         min_length=1,
@@ -157,6 +159,24 @@ class Settings(BaseSettings):
     def validate_database_url(cls, value: str | None) -> str | None:
         return normalize_runtime_database_url(value)
 
+    @field_validator("gateway_cache_encryption_key", mode="before")
+    @classmethod
+    def validate_cache_encryption_key(cls, value: object) -> object:
+        if value is None:
+            return None
+        raw_value = value.get_secret_value() if isinstance(value, SecretStr) else str(value)
+        try:
+            decoded = base64.b64decode(
+                raw_value.encode("ascii"),
+                altchars=b"-_",
+                validate=True,
+            )
+        except (UnicodeEncodeError, binascii.Error) as exc:
+            raise ValueError("cache encryption key must be URL-safe base64") from exc
+        if len(decoded) != 32:
+            raise ValueError("cache encryption key must decode to exactly 32 bytes")
+        return value
+
 
 class GatewayApiKeyConfig(BaseModel):
     api_key_id: UUID
@@ -164,6 +184,7 @@ class GatewayApiKeyConfig(BaseModel):
     key: str = Field(min_length=1, max_length=512)
     enabled: bool = True
     request_quota_limit: int | None = Field(default=None, ge=1)
+    allowed_providers: tuple[Literal["openai", "anthropic", "gemini"], ...] | None = None
 
 
 @lru_cache

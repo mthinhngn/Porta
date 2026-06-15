@@ -21,7 +21,16 @@ class StubRedisClient:
     async def get(self, name: str) -> object:
         raise AssertionError("cache get should not be called in health tests")
 
-    async def set(self, name: str, value: object, ex: int | None = None) -> object:
+    async def delete(self, *names: str) -> int:
+        raise AssertionError("cache delete should not be called in health tests")
+
+    async def set(
+        self,
+        name: str,
+        value: object,
+        ex: int | None = None,
+        nx: bool = False,
+    ) -> object:
         raise AssertionError("cache set should not be called in health tests")
 
     async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:

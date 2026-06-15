@@ -210,6 +210,7 @@ def _client(
     provider_order: list[str] | None = None,
     bootstraps: tuple[RouteBootstrap, ...] | None = None,
     timeout_seconds: float = 5.0,
+    allowed_providers: tuple[str, ...] | None = None,
 ) -> TestClient:
     settings = Settings(
         environment="test",
@@ -221,6 +222,7 @@ def _client(
                 "actor_id": "00000000-0000-0000-0000-000000000201",
                 "key": "test-gateway-key",
                 "enabled": True,
+                "allowed_providers": allowed_providers,
             },
             {
                 "api_key_id": "00000000-0000-0000-0000-000000000102",
@@ -244,6 +246,45 @@ def _client(
     client = TestClient(app)
     client.headers.update(AUTHORIZATION_HEADER)
     return client
+
+
+def test_actor_provider_policy_stops_before_request_persistence(tmp_path: Path) -> None:
+    provider = SequenceProvider(
+        "openai",
+        [
+            GenerateProviderResult(
+                output="must not run",
+                usage=ProviderTokenUsage(
+                    input_tokens=1,
+                    cached_input_tokens=0,
+                    output_tokens=1,
+                    total_tokens=2,
+                ),
+            )
+        ],
+    )
+
+    with _client(
+        tmp_path,
+        {"openai": provider},
+        allowed_providers=("gemini",),
+    ) as client:
+        response = client.post(
+            "/v1/generate",
+            json={"model": "gateway-default", "input": "policy check"},
+        )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "provider_access_denied"
+    assert provider.calls == 0
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        assert session.query(GatewayRequest).count() == 0
+        assert session.query(ProviderAttempt).count() == 0
+        assert session.query(UsageRecord).count() == 0
+    engine.dispose()
 
 
 def _database_dump(database_path: Path) -> str:
@@ -405,9 +446,7 @@ def test_generate_timeout_maps_to_gateway_error(tmp_path: Path) -> None:
     assert request.error_message == "Provider request timed out."
     assert len(attempts) == 2
     assert {attempt.status for attempt in attempts} == {"timed_out"}
-    assert {
-        attempt.error_message for attempt in attempts
-    } == {"Provider request timed out."}
+    assert {attempt.error_message for attempt in attempts} == {"Provider request timed out."}
 
 
 def test_generate_authentication_failure_maps_to_gateway_error(tmp_path: Path) -> None:

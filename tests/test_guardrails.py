@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -68,9 +70,22 @@ class TrackingRedisClient:
         self.get_calls += 1
         return self.values.get(name)
 
-    async def set(self, name: str, value: object, ex: int | None = None) -> object:
+    async def delete(self, *names: str) -> int:
+        for name in names:
+            self.values.pop(name, None)
+        return 0
+
+    async def set(
+        self,
+        name: str,
+        value: object,
+        ex: int | None = None,
+        nx: bool = False,
+    ) -> object:
         self.set_calls += 1
         assert isinstance(value, str)
+        if nx and name in self.values:
+            return False
         self.values[name] = value
         return True
 
@@ -118,6 +133,7 @@ def _client(
         environment="test",
         log_level="INFO",
         redis_url="redis://example.test:6379/0",
+        gateway_cache_encryption_key=base64.urlsafe_b64encode(b"g" * 32).decode(),
         gateway_guardrail_test_block_token="BLOCK_ME_PHASE2",
         gateway_api_keys=(
             {
@@ -159,6 +175,7 @@ def _database_dump(database_path: Path) -> str:
 
 def test_generate_blocked_request_returns_sanitized_denial_before_quota_cache_or_provider(
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     redis_client = TrackingRedisClient()
     provider = RecordingProvider()
@@ -193,6 +210,37 @@ def test_generate_blocked_request_returns_sanitized_denial_before_quota_cache_or
 
     persisted = _database_dump(tmp_path / "guardrails.sqlite3")
     assert BLOCKED_PROMPT not in persisted
+    assert BLOCKED_PROMPT not in caplog.text
+
+
+def test_authentication_rejection_short_circuits_guardrail_quota_cache_and_provider(
+    tmp_path: Path,
+) -> None:
+    redis_client = TrackingRedisClient()
+    provider = RecordingProvider()
+
+    with _client(tmp_path, redis_client, provider) as client:
+        response = client.post(
+            "/v1/generate",
+            headers={"Authorization": ""},
+            json={"model": "gateway-default", "input": BLOCKED_PROMPT},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "authentication_error"
+    assert provider.calls == 0
+    assert redis_client.eval_calls == 0
+    assert redis_client.get_calls == 0
+    assert redis_client.set_calls == 0
+    assert redis_client.values == {}
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'guardrails.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        assert session.query(GatewayRequest).count() == 0
+        assert session.query(ProviderAttempt).count() == 0
+        assert session.query(UsageRecord).count() == 0
+    engine.dispose()
 
 
 def test_generate_allowed_request_still_reaches_quota_cache_and_provider(tmp_path: Path) -> None:
@@ -208,6 +256,6 @@ def test_generate_allowed_request_still_reaches_quota_cache_and_provider(tmp_pat
     assert response.status_code == 200
     assert response.json()["output"] == "should not run"
     assert provider.calls == 1
-    assert redis_client.eval_calls == 1
+    assert redis_client.eval_calls == 2
     assert redis_client.get_calls == 1
-    assert redis_client.set_calls == 1
+    assert redis_client.set_calls == 2
