@@ -82,6 +82,12 @@ class GatewayLedger(Protocol):
 
     def resolve_route(self, requested_model: str) -> GatewayRoute | None: ...
 
+    def resolve_route_for_provider(
+        self,
+        requested_model: str,
+        provider_name: str,
+    ) -> GatewayRoute | None: ...
+
     def begin_generation(
         self,
         *,
@@ -91,6 +97,14 @@ class GatewayLedger(Protocol):
         started_at: datetime,
     ) -> tuple[UUID, UUID]: ...
 
+    def begin_attempt(
+        self,
+        *,
+        gateway_request_id: UUID,
+        route: GatewayRoute,
+        started_at: datetime,
+    ) -> UUID: ...
+
     def fail_generation(
         self,
         *,
@@ -98,6 +112,25 @@ class GatewayLedger(Protocol):
         attempt_id: UUID,
         attempt_status: str,
         latency_ms: int,
+        error: ProviderError,
+        completed_at: datetime,
+    ) -> None: ...
+
+    def fail_attempt(
+        self,
+        *,
+        request_id: UUID,
+        attempt_id: UUID,
+        attempt_status: str,
+        latency_ms: int,
+        error: ProviderError,
+        completed_at: datetime,
+    ) -> None: ...
+
+    def fail_request(
+        self,
+        *,
+        request_id: UUID,
         error: ProviderError,
         completed_at: datetime,
     ) -> None: ...
@@ -165,6 +198,7 @@ class SqlAlchemyGatewayLedger(GatewayLedger):
 
             obsolete_models = session.scalars(
                 select(Model).where(
+                    Model.provider_id == provider.id,
                     Model.gateway_name == config.gateway_model,
                     Model.id != model.id,
                 )
@@ -227,6 +261,36 @@ class SqlAlchemyGatewayLedger(GatewayLedger):
                 routing_reason="configured_single_path",
             )
 
+    def resolve_route_for_provider(
+        self,
+        requested_model: str,
+        provider_name: str,
+    ) -> GatewayRoute | None:
+        with self._session_factory() as session:
+            row = session.execute(
+                select(Model, Provider)
+                .join(Provider, Provider.id == Model.provider_id)
+                .where(
+                    Model.gateway_name == requested_model,
+                    Provider.name == provider_name,
+                    Model.enabled.is_(True),
+                    Provider.enabled.is_(True),
+                )
+                .order_by(Model.created_at.asc())
+            ).first()
+            if row is None:
+                return None
+
+            model, provider = row
+            return GatewayRoute(
+                provider_id=provider.id,
+                provider_name=provider.name,
+                model_id=model.id,
+                gateway_model=model.gateway_name,
+                upstream_model=model.upstream_name,
+                routing_reason="configured_single_path",
+            )
+
     def begin_generation(
         self,
         *,
@@ -258,7 +322,63 @@ class SqlAlchemyGatewayLedger(GatewayLedger):
             session.flush()
             return record.id, attempt.id
 
+    def begin_attempt(
+        self,
+        *,
+        gateway_request_id: UUID,
+        route: GatewayRoute,
+        started_at: datetime,
+    ) -> UUID:
+        with self._session_factory.begin() as session:
+            record = session.get(GatewayRequest, gateway_request_id, with_for_update=True)
+            if record is None:
+                raise RuntimeError("Generation request does not exist.")
+            if record.status != "in_progress":
+                raise RuntimeError("Generation request must be in progress.")
+
+            next_attempt_number = (
+                session.query(ProviderAttempt)
+                .filter(ProviderAttempt.gateway_request_id == gateway_request_id)
+                .count()
+                + 1
+            )
+            attempt = ProviderAttempt(
+                gateway_request_id=gateway_request_id,
+                provider_id=route.provider_id,
+                model_id=route.model_id,
+                attempt_number=next_attempt_number,
+                status="in_progress",
+                started_at=started_at,
+            )
+            session.add(attempt)
+            session.flush()
+            return attempt.id
+
     def fail_generation(
+        self,
+        *,
+        request_id: UUID,
+        attempt_id: UUID,
+        attempt_status: str,
+        latency_ms: int,
+        error: ProviderError,
+        completed_at: datetime,
+    ) -> None:
+        self.fail_attempt(
+            request_id=request_id,
+            attempt_id=attempt_id,
+            attempt_status=attempt_status,
+            latency_ms=latency_ms,
+            error=error,
+            completed_at=completed_at,
+        )
+        self.fail_request(
+            request_id=request_id,
+            error=error,
+            completed_at=completed_at,
+        )
+
+    def fail_attempt(
         self,
         *,
         request_id: UUID,
@@ -285,6 +405,20 @@ class SqlAlchemyGatewayLedger(GatewayLedger):
             attempt.error_code = error.code
             attempt.error_message = error.message
             attempt.completed_at = completed_at
+
+    def fail_request(
+        self,
+        *,
+        request_id: UUID,
+        error: ProviderError,
+        completed_at: datetime,
+    ) -> None:
+        with self._session_factory.begin() as session:
+            record = session.get(GatewayRequest, request_id, with_for_update=True)
+            if record is None:
+                raise RuntimeError("Generation request does not exist.")
+            if record.status != "in_progress":
+                raise RuntimeError("Generation request must be in progress.")
             record.status = "failed"
             record.error_type = type(error).__name__
             record.error_code = error.code

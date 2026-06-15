@@ -59,13 +59,21 @@ class RedisQuotaEnforcer:
         self._redis_client = redis_client
 
     async def enforce(self, policy: QuotaPolicy) -> None:
-        result = await self._redis_client.eval(
-            QUOTA_INCREMENT_SCRIPT,
-            1,
-            quota_key(policy.actor_id),
-            policy.request_limit,
-            policy.window_seconds,
-        )
+        try:
+            result = await self._redis_client.eval(
+                QUOTA_INCREMENT_SCRIPT,
+                1,
+                quota_key(policy.actor_id),
+                policy.request_limit,
+                policy.window_seconds,
+            )
+        except Exception as exc:
+            raise ApiError(
+                message="Quota service is unavailable.",
+                type="server_error",
+                status_code=503,
+                code="service_unavailable",
+            ) from exc
         if not isinstance(result, int):
             raise ApiError(
                 message="Quota service is unavailable.",

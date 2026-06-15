@@ -60,7 +60,7 @@ def test_get_settings_caches_loaded_configuration(monkeypatch: pytest.MonkeyPatc
 def test_default_generation_pricing_matches_configured_phase_one_model() -> None:
     settings = Settings()
 
-    assert settings.generate_upstream_model == "gpt-4.1-mini"
-    assert settings.generate_input_cost_per_million == Decimal("0.4000000000")
-    assert settings.generate_cached_input_cost_per_million == Decimal("0.1000000000")
-    assert settings.generate_output_cost_per_million == Decimal("1.6000000000")
+    assert settings.generate_openai_upstream_model == "gpt-4.1-mini"
+    assert settings.generate_openai_input_cost_per_million == Decimal("0.4000000000")
+    assert settings.generate_openai_cached_input_cost_per_million == Decimal("0.1000000000")
+    assert settings.generate_openai_output_cost_per_million == Decimal("1.6000000000")

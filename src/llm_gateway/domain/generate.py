@@ -45,4 +45,6 @@ class GenerateResponse(ContractModel):
     cost: GenerateCost
     routing_reason: Annotated[str, Field(min_length=1, max_length=255)]
     cache_status: Annotated[str, Field(min_length=1, max_length=64)]
+    served_from_cache: bool = False
+    attempt_count: Annotated[int, Field(ge=0)] = 1
     latency_ms: Annotated[int, Field(ge=0)]

@@ -3,7 +3,9 @@
 from fastapi import APIRouter, Request
 
 from llm_gateway.core.auth import authenticated_actor
+from llm_gateway.core.cache import CachePolicy, RedisResponseCache
 from llm_gateway.core.errors import ApiError
+from llm_gateway.core.guardrails import GuardrailPolicy, GuardrailService, raise_for_blocked
 from llm_gateway.core.quota import RedisQuotaEnforcer, actor_quota_policy
 from llm_gateway.domain import GenerateRequest, GenerateResponse
 from llm_gateway.services import GenerationService
@@ -30,6 +32,30 @@ def _quota_enforcer(request: Request) -> RedisQuotaEnforcer | None:
     return RedisQuotaEnforcer(redis_client)
 
 
+def _response_cache(request: Request) -> RedisResponseCache | None:
+    redis_client = getattr(request.app.state, "redis_client", None)
+    if redis_client is None:
+        return None
+    settings = request.app.state.settings
+    return RedisResponseCache(
+        redis_client,
+        policy=CachePolicy(
+            ttl_seconds=settings.gateway_cache_ttl_seconds,
+            guardrail_version=settings.gateway_guardrail_version,
+        ),
+    )
+
+
+def _guardrail_service(request: Request) -> GuardrailService:
+    settings = request.app.state.settings
+    return GuardrailService(
+        policy=GuardrailPolicy(
+            version=settings.gateway_guardrail_version,
+            test_block_token=settings.gateway_guardrail_test_block_token,
+        )
+    )
+
+
 @router.post("/generate", response_model=GenerateResponse, tags=["generate"])
 async def generate(payload: GenerateRequest, request: Request) -> GenerateResponse:
     service = _generation_service(request)
@@ -42,6 +68,8 @@ async def generate(payload: GenerateRequest, request: Request) -> GenerateRespon
             status_code=500,
             code="missing_correlation_id",
         )
+    guardrail_service = _guardrail_service(request)
+    raise_for_blocked(guardrail_service.evaluate(payload))
     policy = actor_quota_policy(
         actor,
         window_seconds=getattr(request.app.state.settings, "gateway_quota_window_seconds", 60),
@@ -56,4 +84,21 @@ async def generate(payload: GenerateRequest, request: Request) -> GenerateRespon
                 code="service_unavailable",
             )
         await enforcer.enforce(policy)
-    return await service.generate(payload, correlation_id=correlation_id)
+    response_cache = _response_cache(request)
+    if response_cache is not None:
+        cached_response = await response_cache.get(
+            actor_id=actor.actor_id,
+            resolved_model=payload.model,
+            request=payload,
+        )
+        if cached_response is not None:
+            return cached_response
+    response = await service.generate(payload, correlation_id=correlation_id)
+    if response_cache is not None:
+        await response_cache.put(
+            actor_id=actor.actor_id,
+            resolved_model=response.model,
+            request=payload,
+            response=response,
+        )
+    return response

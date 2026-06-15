@@ -13,8 +13,6 @@ from llm_gateway.core.config import Settings
 from llm_gateway.core.quota import QUOTA_INCREMENT_SCRIPT, RedisQuotaEnforcer, quota_key
 from llm_gateway.domain import GenerateRequest
 from llm_gateway.main import create_app
-from llm_gateway.providers import GenerateProvider, GenerateProviderContext
-from llm_gateway.providers import GenerateProviderResult, ProviderTokenUsage
 from llm_gateway.persistence import (
     Base,
     GatewayRequest,
@@ -22,6 +20,12 @@ from llm_gateway.persistence import (
     RouteBootstrap,
     SqlAlchemyGatewayLedger,
     UsageRecord,
+)
+from llm_gateway.providers import (
+    GenerateProvider,
+    GenerateProviderContext,
+    GenerateProviderResult,
+    ProviderTokenUsage,
 )
 from llm_gateway.services import GenerationService
 
@@ -60,15 +64,18 @@ def _service(
         provider_registry=provider_registry,
         ledger=ledger,
         timeout_seconds=5.0,
-        bootstrap=RouteBootstrap(
-            provider_name="openai",
-            provider_adapter="openai_responses",
-            gateway_model="gateway-default",
-            upstream_model="gpt-4.1-mini",
-            currency="USD",
-            input_cost_per_million=Decimal("0.4000000000"),
-            cached_input_cost_per_million=Decimal("0.1000000000"),
-            output_cost_per_million=Decimal("1.6000000000"),
+        provider_order=["openai"],
+        bootstraps=(
+            RouteBootstrap(
+                provider_name="openai",
+                provider_adapter="openai_responses",
+                gateway_model="gateway-default",
+                upstream_model="gpt-4.1-mini",
+                currency="USD",
+                input_cost_per_million=Decimal("0.4000000000"),
+                cached_input_cost_per_million=Decimal("0.1000000000"),
+                output_cost_per_million=Decimal("1.6000000000"),
+            ),
         ),
     )
     service.bootstrap()
@@ -78,9 +85,18 @@ def _service(
 class StubQuotaRedisClient:
     def __init__(self) -> None:
         self._values: dict[str, int] = {}
+        self._cache: dict[str, str] = {}
         self._lock = asyncio.Lock()
 
     async def ping(self) -> bool:
+        return True
+
+    async def get(self, name: str) -> object:
+        return self._cache.get(name)
+
+    async def set(self, name: str, value: object, ex: int | None = None) -> object:
+        assert isinstance(value, str)
+        self._cache[name] = value
         return True
 
     async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
@@ -103,6 +119,11 @@ class StubQuotaRedisClient:
 
     def value_for(self, key: str) -> int | None:
         return self._values.get(key)
+
+
+class FailingQuotaRedisClient(StubQuotaRedisClient):
+    async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
+        raise RuntimeError("redis down")
 
 
 def _quota_client(
@@ -169,6 +190,23 @@ def test_generate_quota_rejects_over_limit_before_provider_or_usage(tmp_path: Pa
         assert session.query(ProviderAttempt).count() == 1
         assert session.query(UsageRecord).count() == 1
     engine.dispose()
+
+
+def test_generate_quota_returns_service_unavailable_when_redis_eval_fails(
+    tmp_path: Path,
+) -> None:
+    redis_client = FailingQuotaRedisClient()
+
+    with _quota_client(tmp_path, redis_client, request_quota_limit=1) as client:
+        response = client.post("/v1/generate", json={"model": "gateway-default", "input": "hello"})
+
+    assert response.status_code == 503
+    assert response.json()["error"] == {
+        "message": "Quota service is unavailable.",
+        "type": "server_error",
+        "param": None,
+        "code": "service_unavailable",
+    }
 
 
 async def _run_enforcer_concurrently(

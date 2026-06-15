@@ -38,10 +38,10 @@ def _live_settings(*, database_url: str, api_key: str) -> Settings:
             "LLM_GATEWAY_SMOKE_GATEWAY_MODEL",
             "gateway-default",
         ),
-        generate_upstream_model=SMOKE_MODEL,
-        generate_input_cost_per_million=SMOKE_INPUT_COST_PER_MILLION,
-        generate_cached_input_cost_per_million=SMOKE_CACHED_INPUT_COST_PER_MILLION,
-        generate_output_cost_per_million=SMOKE_OUTPUT_COST_PER_MILLION,
+        generate_openai_upstream_model=SMOKE_MODEL,
+        generate_openai_input_cost_per_million=SMOKE_INPUT_COST_PER_MILLION,
+        generate_openai_cached_input_cost_per_million=SMOKE_CACHED_INPUT_COST_PER_MILLION,
+        generate_openai_output_cost_per_million=SMOKE_OUTPUT_COST_PER_MILLION,
         live_smoke_enabled=True,
     )
 
@@ -89,10 +89,10 @@ def test_live_generate_smoke(tmp_path: Path) -> None:
     body = response.json()
     assert body["request_id"]
     assert body["output"]
-    assert body["provider"] == settings.generate_provider_name
+    assert body["provider"] == settings.generate_primary_provider_name
     assert body["model"] == settings.generate_gateway_model
     assert body["tokens"]["total_tokens"] >= 1
-    assert body["cost"]["currency"] == settings.generate_currency
+    assert body["cost"]["currency"] == settings.generate_openai_currency
     assert body["routing_reason"] == "configured_single_path"
     assert body["cache_status"] in {"miss", "hit"}
     assert body["latency_ms"] >= 0

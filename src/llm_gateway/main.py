@@ -17,7 +17,12 @@ from llm_gateway.core.logging import configure_logging
 from llm_gateway.core.middleware import CorrelationIdMiddleware
 from llm_gateway.core.redis import RedisClient, build_redis_client
 from llm_gateway.persistence.ledger import RouteBootstrap, SqlAlchemyGatewayLedger
-from llm_gateway.providers.openai_responses import OpenAIResponsesProvider
+from llm_gateway.providers import (
+    AnthropicMessagesProvider,
+    GeminiGenerateContentProvider,
+    GenerateProvider,
+    OpenAIResponsesProvider,
+)
 from llm_gateway.services.generation import GenerationService
 
 
@@ -83,27 +88,71 @@ def _build_generation_service(
     settings: Settings,
     session_factory: sessionmaker[Session],
 ) -> GenerationService:
-    provider = OpenAIResponsesProvider(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
-        name=settings.generate_provider_name,
-    )
+    provider_registry: dict[str, GenerateProvider] = {
+        "openai": OpenAIResponsesProvider(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            name="openai",
+        )
+    }
+    bootstraps = [
+        RouteBootstrap(
+            provider_name="openai",
+            provider_adapter=settings.generate_primary_provider_adapter,
+            gateway_model=settings.generate_gateway_model,
+            upstream_model=settings.generate_openai_upstream_model,
+            currency=settings.generate_openai_currency,
+            input_cost_per_million=settings.generate_openai_input_cost_per_million,
+            cached_input_cost_per_million=settings.generate_openai_cached_input_cost_per_million,
+            output_cost_per_million=settings.generate_openai_output_cost_per_million,
+        )
+    ]
+    provider_order = ["openai"]
+    if settings.generate_anthropic_enabled:
+        provider_registry["anthropic"] = AnthropicMessagesProvider(
+            api_key=settings.anthropic_api_key,
+            base_url=settings.anthropic_base_url,
+            name="anthropic",
+        )
+        bootstraps.append(
+            RouteBootstrap(
+                provider_name="anthropic",
+                provider_adapter=settings.generate_anthropic_adapter,
+                gateway_model=settings.generate_gateway_model,
+                upstream_model=settings.generate_anthropic_upstream_model,
+                currency=settings.generate_anthropic_currency,
+                input_cost_per_million=settings.generate_anthropic_input_cost_per_million,
+                cached_input_cost_per_million=settings.generate_anthropic_cached_input_cost_per_million,
+                output_cost_per_million=settings.generate_anthropic_output_cost_per_million,
+            )
+        )
+        provider_order.append("anthropic")
+    if settings.generate_gemini_enabled:
+        provider_registry["gemini"] = GeminiGenerateContentProvider(
+            api_key=settings.gemini_api_key,
+            base_url=settings.gemini_base_url,
+            name="gemini",
+        )
+        bootstraps.append(
+            RouteBootstrap(
+                provider_name="gemini",
+                provider_adapter=settings.generate_gemini_adapter,
+                gateway_model=settings.generate_gateway_model,
+                upstream_model=settings.generate_gemini_upstream_model,
+                currency=settings.generate_gemini_currency,
+                input_cost_per_million=settings.generate_gemini_input_cost_per_million,
+                cached_input_cost_per_million=settings.generate_gemini_cached_input_cost_per_million,
+                output_cost_per_million=settings.generate_gemini_output_cost_per_million,
+            )
+        )
+        provider_order.append("gemini")
     ledger = SqlAlchemyGatewayLedger(session_factory)
-    bootstrap = RouteBootstrap(
-        provider_name=settings.generate_provider_name,
-        provider_adapter=settings.generate_provider_adapter,
-        gateway_model=settings.generate_gateway_model,
-        upstream_model=settings.generate_upstream_model,
-        currency=settings.generate_currency,
-        input_cost_per_million=settings.generate_input_cost_per_million,
-        cached_input_cost_per_million=settings.generate_cached_input_cost_per_million,
-        output_cost_per_million=settings.generate_output_cost_per_million,
-    )
     return GenerationService(
-        provider_registry={settings.generate_provider_name: provider},
+        provider_registry=provider_registry,
         ledger=ledger,
         timeout_seconds=settings.provider_timeout_seconds,
-        bootstrap=bootstrap,
+        provider_order=provider_order,
+        bootstraps=bootstraps,
     )
 
 

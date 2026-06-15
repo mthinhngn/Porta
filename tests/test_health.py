@@ -18,6 +18,12 @@ class StubRedisClient:
             raise RuntimeError("redis down")
         return self._ping_result
 
+    async def get(self, name: str) -> object:
+        raise AssertionError("cache get should not be called in health tests")
+
+    async def set(self, name: str, value: object, ex: int | None = None) -> object:
+        raise AssertionError("cache set should not be called in health tests")
+
     async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
         raise AssertionError("quota eval should not be called in health tests")
 

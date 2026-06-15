@@ -51,27 +51,104 @@ class Settings(BaseSettings):
     redis_url: str | None = Field(default=None, min_length=1, max_length=2048)
     provider_timeout_seconds: float = Field(default=30.0, gt=0)
     gateway_quota_window_seconds: int = Field(default=60, ge=1)
+    gateway_cache_ttl_seconds: int = Field(default=300, ge=1)
+    gateway_guardrail_version: str = Field(default="phase2-v1", min_length=1, max_length=64)
+    gateway_guardrail_test_block_token: str = Field(
+        default="BLOCK_ME_PHASE2",
+        min_length=1,
+        max_length=128,
+    )
     openai_api_key: str | None = Field(default=None, min_length=1)
     openai_base_url: str = Field(
         default="https://api.openai.com/v1",
         min_length=1,
         max_length=2048,
     )
-    generate_provider_name: str = Field(default="openai", min_length=1, max_length=128)
-    generate_provider_adapter: str = Field(
+    anthropic_api_key: str | None = Field(default=None, min_length=1)
+    anthropic_base_url: str = Field(
+        default="https://api.anthropic.com/v1",
+        min_length=1,
+        max_length=2048,
+    )
+    gemini_api_key: str | None = Field(default=None, min_length=1)
+    gemini_base_url: str = Field(
+        default="https://generativelanguage.googleapis.com/v1beta",
+        min_length=1,
+        max_length=2048,
+    )
+    generate_primary_provider_name: str = Field(default="openai", min_length=1, max_length=128)
+    generate_primary_provider_adapter: str = Field(
         default="openai_responses",
         min_length=1,
         max_length=128,
     )
     generate_gateway_model: str = Field(default="gateway-default", min_length=1, max_length=255)
-    generate_upstream_model: str = Field(default="gpt-4.1-mini", min_length=1, max_length=255)
-    generate_currency: str = Field(default="USD", min_length=3, max_length=3)
-    generate_input_cost_per_million: Decimal = Field(default=Decimal("0.4000000000"), ge=0)
-    generate_cached_input_cost_per_million: Decimal = Field(
+    generate_openai_upstream_model: str = Field(
+        default="gpt-4.1-mini",
+        min_length=1,
+        max_length=255,
+    )
+    generate_openai_currency: str = Field(default="USD", min_length=3, max_length=3)
+    generate_openai_input_cost_per_million: Decimal = Field(
+        default=Decimal("0.4000000000"),
+        ge=0,
+    )
+    generate_openai_cached_input_cost_per_million: Decimal = Field(
         default=Decimal("0.1000000000"),
         ge=0,
     )
-    generate_output_cost_per_million: Decimal = Field(default=Decimal("1.6000000000"), ge=0)
+    generate_openai_output_cost_per_million: Decimal = Field(
+        default=Decimal("1.6000000000"),
+        ge=0,
+    )
+    generate_anthropic_enabled: bool = False
+    generate_anthropic_adapter: str = Field(
+        default="anthropic_messages",
+        min_length=1,
+        max_length=128,
+    )
+    generate_anthropic_upstream_model: str = Field(
+        default="claude-3-5-haiku-latest",
+        min_length=1,
+        max_length=255,
+    )
+    generate_anthropic_currency: str = Field(default="USD", min_length=3, max_length=3)
+    generate_anthropic_input_cost_per_million: Decimal = Field(
+        default=Decimal("0.8000000000"),
+        ge=0,
+    )
+    generate_anthropic_cached_input_cost_per_million: Decimal = Field(
+        default=Decimal("0.0000000000"),
+        ge=0,
+    )
+    generate_anthropic_output_cost_per_million: Decimal = Field(
+        default=Decimal("4.0000000000"),
+        ge=0,
+    )
+    generate_gemini_enabled: bool = False
+    generate_gemini_adapter: str = Field(
+        default="gemini_generate_content",
+        min_length=1,
+        max_length=128,
+    )
+    generate_gemini_upstream_model: str = Field(
+        default="gemini-2.0-flash",
+        min_length=1,
+        max_length=255,
+    )
+    generate_gemini_currency: str = Field(default="USD", min_length=3, max_length=3)
+    generate_gemini_input_cost_per_million: Decimal = Field(
+        default=Decimal("0.1000000000"),
+        ge=0,
+    )
+    generate_gemini_cached_input_cost_per_million: Decimal = Field(
+        default=Decimal("0.0000000000"),
+        ge=0,
+    )
+    generate_gemini_output_cost_per_million: Decimal = Field(
+        default=Decimal("0.4000000000"),
+        ge=0,
+    )
     gateway_api_keys: tuple["GatewayApiKeyConfig", ...] = ()
     live_smoke_enabled: bool = False
 
