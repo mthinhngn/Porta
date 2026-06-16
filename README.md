@@ -1,16 +1,77 @@
 # LLM Gateway
 
-Phase 1 foundation for a privacy-conscious, OpenAI-compatible LLM gateway.
-This phase implements one narrow generation path:
-application composition, `/v1/generate`, normalized provider boundaries,
-Decimal cost accounting, persistence for requests and usage, and migrations.
-The Phase 1 release gate remains open until the evidence in
-`docs/gates/phase-1.md` is completed against one pushed commit.
+A privacy-conscious Python LLM gateway for authenticated text generation,
+provider routing, usage accounting, quotas, caching, and local fallback models.
+
+![LLM Gateway system design](docs/assets/system-design.svg)
+
+## What It Does
+
+- Exposes `POST /v1/generate` through FastAPI.
+- Authenticates callers with gateway API keys.
+- Resolves each key to one internal actor identity.
+- Runs guardrails before quota, cache, or provider execution.
+- Enforces per-actor Redis quotas.
+- Serves actor-scoped encrypted Redis cache hits without new provider calls or
+  charges.
+- Uses OpenAI as the primary provider.
+- Falls back to local Ollama models when OpenAI has retryable failures.
+- Persists sanitized request, provider-attempt, pricing, and usage records.
+- Calculates cost with `Decimal` and keeps local fallback pricing at zero USD.
+
+## Request Flow
+
+```text
+auth -> guardrail -> quota -> cache -> provider retry/fallback -> persist
+```
+
+Short-circuit behavior:
+
+- Authentication failure stops before guardrails, quota, cache, providers, and
+  persistence.
+- Guardrail block returns a sanitized denial with no quota use, cache access,
+  provider call, usage row, or charge.
+- Quota failure stops before cache and provider execution.
+- Cache hit returns the cached response with no provider call and no new usage
+  row.
+- Provider success creates exactly one winning usage row and then caches the
+  normalized response.
+- Provider failure writes no cache entry and no usage row.
+
+## Routing Summary
+
+Guardrails do not call OpenAI, Qwen, or Llama. They are deterministic local
+checks that return only `allow` or `block`.
+
+After guardrails allow a request, the gateway classifies the prompt with local
+deterministic rules:
+
+- Coding indicators include code fences, stack traces, file extensions, SQL,
+  `code`, `function`, `class`, `debug`, `implement`, `refactor`, and `regex`.
+- Prompts without coding indicators are treated as general prompts.
+
+Fallback order:
+
+- Coding prompt: `OpenAI -> OpenAI retry -> Qwen -> Llama`
+- General prompt: `OpenAI -> OpenAI retry -> Llama -> Qwen`
+
+Only OpenAI receives the same-provider retry. Each local Ollama fallback model
+gets at most one attempt, and all attempts share one deadline.
 
 ## Requirements
 
 - Python 3.12
 - [uv](https://docs.astral.sh/uv/)
+- Redis for readiness, quotas, and cache
+- Ollama for local fallback smokes
+- PostgreSQL-compatible database for production persistence
+
+Local fallback models:
+
+```console
+ollama pull llama3.2:3b
+ollama pull qwen2.5-coder:3b
+```
 
 ## Setup
 
@@ -19,20 +80,16 @@ uv python install 3.12
 uv sync --frozen
 ```
 
-Copy `.env.example` to `.env` only when local overrides are needed. Local
-health checks do not require database or provider credentials, but `/v1/generate`
-needs a database URL and `LLM_GATEWAY_OPENAI_API_KEY`. The ignored `.env` file
-is for local secrets; never put a real key in `.env.example`.
+Copy `.env.example` to `.env` only when local overrides are needed. The ignored
+`.env` file is for local secrets; never put real keys in `.env.example`.
 
-The application ledger uses synchronous SQLAlchemy sessions. Configure its
-PostgreSQL URL as `postgresql+psycopg://user:password@host/database`. A bare
-`postgresql://` URL is normalized to that driver. Runtime
-`postgresql+asyncpg://` URLs are rejected before startup; asyncpg remains
-installed only for Alembic's asynchronous migration environment.
+Important runtime settings:
 
-The implementation has one configured OpenAI/model mapping. Authentication,
-Redis, retries, fallback, dynamic routing, and additional providers are outside
-Phase 1.
+- `LLM_GATEWAY_DATABASE_URL`
+- `LLM_GATEWAY_REDIS_URL`
+- `LLM_GATEWAY_OPENAI_API_KEY`
+- `LLM_GATEWAY_GATEWAY_API_KEYS`
+- `LLM_GATEWAY_OLLAMA_BASE_URL`
 
 ## Run
 
@@ -40,12 +97,7 @@ Phase 1.
 uv run llm-gateway
 ```
 
-The project entry point disables Uvicorn's raw access log because its request
-target can contain confidential query-string values. The gateway still emits a
-structured completion event using only the matched route template, method,
-status, duration, and correlation ID.
-
-For local auto-reload, preserve the same privacy control explicitly:
+For local auto-reload, keep raw access logs disabled:
 
 ```console
 uv run uvicorn llm_gateway.main:app --reload --no-access-log
@@ -67,39 +119,9 @@ Example generation request:
 }
 ```
 
-## Quality Checks
-
-```console
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
-```
-
 ## Database Migrations
 
 The Alembic environment imports `llm_gateway.persistence.Base.metadata`.
-The current revisions create the Phase 1 persistence schema, including pricing
-snapshots for Decimal cost accounting. The complete additive chain is
-`20260611_0001 -> 20260611_0002 -> 20260612_0003`.
-
-Alembic intentionally uses the separate `postgresql+asyncpg://` URL in
-`alembic.ini` because `alembic/env.py` constructs an async migration engine.
-That migration-only URL must not be copied into
-`LLM_GATEWAY_DATABASE_URL`, which is consumed by the synchronous application
-ledger.
-
-Usage accounting prices uncached input, cached input, and output separately.
-The checked-in `gpt-4.1-mini` defaults are:
-
-- input: USD 0.40 per million tokens
-- cached input: USD 0.10 per million tokens
-- output: USD 1.60 per million tokens
-
-These defaults matched the
-[official GPT-4.1 mini model pricing](https://developers.openai.com/api/docs/models/gpt-4.1-mini)
-when checked on June 12, 2026. Recheck provider pricing before approving a live
-release gate.
 
 ```console
 uv run alembic upgrade head
@@ -107,40 +129,37 @@ uv run alembic upgrade head --sql
 uv run alembic revision --autogenerate -m "describe change"
 ```
 
-## Optional Live Smoke
+The application ledger uses synchronous SQLAlchemy sessions. Configure its
+runtime PostgreSQL URL as `postgresql+psycopg://user:password@host/database`.
+A bare `postgresql://` URL is normalized to that driver.
 
-The live smoke tests are opt-in because the success case calls the real OpenAI
-API. Save the key in the ignored `.env` file:
+## Quality Checks
 
 ```console
-LLM_GATEWAY_OPENAI_API_KEY=...
+uv sync --frozen
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+uv run pytest -q
+uv run python -m alembic heads
+uv run python -m alembic upgrade head --sql
 ```
 
-Then explicitly enable the gate in the current PowerShell session:
+Optional local integration checks:
 
 ```powershell
-$env:LLM_GATEWAY_LIVE_SMOKE="1"
-uv run pytest tests/test_live_smoke.py -s
-```
-
-The paid success probe pins `gpt-4.1-mini`, uses a 16-token output cap, and
-checks a conservative USD 0.0001280000 estimated ceiling against the approved
-USD 0.01 maximum. It prints only the numeric estimated cost and currency. The
-same opt-in file also sends an invalid-key request and verifies the sanitized
-authentication failure path. It never prints the configured key.
-
-Gate evidence is recorded under `docs/gates/`.
-
-## Local Ollama Fallbacks
-
-Phase 2 uses two free local fallback models:
-
-```powershell
-ollama pull llama3.2:3b
-ollama pull qwen2.5-coder:3b
 $env:LLM_GATEWAY_LOCAL_SMOKE="1"
-uv run pytest tests/test_local_smoke.py -s
+uv run pytest tests/test_local_smoke.py -q
+
+$env:LLM_GATEWAY_REAL_REDIS_TEST="1"
+uv run pytest tests/test_real_redis.py -q
 ```
 
-General prompts prefer Llama and coding prompts prefer Qwen after the single
-OpenAI retry. Both local models retain token accounting but use zero USD pricing.
+## Privacy
+
+- Prompts and generated output are not logged or persisted.
+- Provider errors are sanitized before reaching clients or persistence.
+- API keys and provider secrets stay in environment configuration.
+- Redis cache keys use scoped fingerprints, not raw prompt text.
+- OpenAI requests use `store=false`.
+- The packaged server disables Uvicorn raw access logs.
