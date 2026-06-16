@@ -5,6 +5,7 @@
 .direnv/
 .venv/
 venv/
+vnev/
 ENV/
 env/
 __pycache__/
@@ -32,6 +33,7 @@ site/
 .cache/
 *.sqlite
 *.sqlite3
+*.sqlite3.bak-*
 *.db
 .idea/
 .vscode/
