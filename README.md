@@ -3,7 +3,40 @@
 A privacy-conscious Python LLM gateway for authenticated text generation,
 provider routing, usage accounting, quotas, caching, and local fallback models.
 
-![LLM Gateway system design](docs/assets/system-design.svg)
+```mermaid
+flowchart TD
+    Client["Client / App"] --> API["POST /v1/generate"]
+
+    API --> Auth["1. Auth<br/>Validate gateway API key"]
+    Auth -->|fail| AuthFail["401 sanitized error<br/>No DB row, no provider call"]
+
+    Auth -->|pass| Guardrail["2. Guardrail<br/>Input allow/block"]
+    Guardrail -->|block| Blocked["400 sanitized denial<br/>No quota, cache, provider, usage, or charge"]
+
+    Guardrail -->|allow| Quota["3. Quota<br/>Atomic Redis per-actor limit"]
+    Quota -->|exceeded| QuotaFail["429 quota exceeded<br/>No cache, provider, usage, or charge"]
+
+    Quota -->|ok| Cache["4. Cache<br/>Actor + request + guardrail version"]
+    Cache -->|hit| CacheHit["Return cached response<br/>No provider call<br/>No new usage row"]
+
+    Cache -->|miss| Classifier["5. Task Classifier<br/>Deterministic local rules"]
+
+    Classifier -->|coding prompt| CodingRoute["Coding Route<br/>OpenAI -> OpenAI retry -> Qwen -> Llama"]
+    Classifier -->|general prompt| GeneralRoute["General Route<br/>OpenAI -> OpenAI retry -> Llama -> Qwen"]
+
+    CodingRoute --> ProviderExec["6. Provider Execution<br/>One shared deadline<br/>Never retry local models"]
+    GeneralRoute --> ProviderExec
+
+    ProviderExec -->|success| Ledger["7. SQL Ledger<br/>Provider attempts + one winning usage row"]
+    ProviderExec -->|failure| ProviderFail["Sanitized provider failure<br/>No cache write<br/>No usage row"]
+
+    Ledger --> CacheWrite["8. Cache Write<br/>Only successful normalized responses"]
+    CacheWrite --> Response["GenerateResponse<br/>provider, output, tokens, cost"]
+
+    Quota -.uses.-> Redis[("Redis<br/>quota + cache")]
+    Cache -.uses.-> Redis
+    Ledger -.writes.-> DB[("Database<br/>requests, attempts, usage, pricing")]
+```
 
 ## What It Does
 
