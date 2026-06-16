@@ -28,7 +28,8 @@ flowchart TD
     GeneralRoute --> ProviderExec
 
     ProviderExec -->|success| Ledger["7. SQL Ledger<br/>Provider attempts + one winning usage row"]
-    ProviderExec -->|failure| ProviderFail["Sanitized provider failure<br/>No cache write<br/>No usage row"]
+    ProviderExec -->|total failure| FailureLedger["7. SQL Ledger<br/>Failed request + failed attempts<br/>No usage row"]
+    FailureLedger --> ProviderFail["Sanitized provider failure<br/>No cache write<br/>No usage row"]
 
     Ledger --> CacheWrite["8. Cache Write<br/>Only successful normalized responses"]
     CacheWrite --> Response["GenerateResponse<br/>provider, output, tokens, cost"]
@@ -36,6 +37,7 @@ flowchart TD
     Quota -.uses.-> Redis[("Redis<br/>quota + cache")]
     Cache -.uses.-> Redis
     Ledger -.writes.-> DB[("Database<br/>requests, attempts, usage, pricing")]
+    FailureLedger -.writes.-> DB
 ```
 
 ## What It Does
@@ -47,6 +49,8 @@ flowchart TD
 - Enforces per-actor Redis quotas.
 - Serves actor-scoped encrypted Redis cache hits without new provider calls or
   charges.
+- Uses a single-flight cache reservation so identical concurrent misses do not
+  all call the provider.
 - Uses OpenAI as the primary provider.
 - Falls back to local Ollama models when OpenAI has retryable failures.
 - Persists sanitized request, provider-attempt, pricing, and usage records.
@@ -69,7 +73,8 @@ Short-circuit behavior:
   row.
 - Provider success creates exactly one winning usage row and then caches the
   normalized response.
-- Provider failure writes no cache entry and no usage row.
+- Provider failure persists the failed request and attempts, then writes no
+  cache entry and no usage row.
 
 ## Routing Summary
 
