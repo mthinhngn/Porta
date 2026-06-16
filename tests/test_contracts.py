@@ -258,6 +258,8 @@ def test_generate_response_schema() -> None:
         "cost": {"amount": "0.0000060000", "currency": "USD"},
         "routing_reason": "configured_single_path",
         "cache_status": "miss",
+        "served_from_cache": False,
+        "attempt_count": 1,
         "latency_ms": 42,
     }
 

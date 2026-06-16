@@ -9,6 +9,7 @@ from llm_gateway.providers.errors import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
+from llm_gateway.providers.ollama_generate import OllamaGenerateProvider
 from llm_gateway.providers.openai_responses import OpenAIResponsesProvider
 from llm_gateway.providers.protocol import (
     ChatCompletionProvider,
@@ -25,6 +26,7 @@ __all__ = [
     "GenerateProvider",
     "GenerateProviderContext",
     "GenerateProviderResult",
+    "OllamaGenerateProvider",
     "OpenAIResponsesProvider",
     "ProviderAuthenticationError",
     "ProviderBadRequestError",

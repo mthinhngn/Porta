@@ -1,10 +1,13 @@
 """Validated application configuration."""
 
+import base64
+import binascii
 from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
+from uuid import UUID
 
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -47,34 +50,118 @@ class Settings(BaseSettings):
         pattern=r"^[A-Za-z0-9-]+$",
     )
     database_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    redis_url: str | None = Field(default=None, min_length=1, max_length=2048)
     provider_timeout_seconds: float = Field(default=30.0, gt=0)
+    gateway_quota_window_seconds: int = Field(default=60, ge=1)
+    gateway_cache_ttl_seconds: int = Field(default=300, ge=1)
+    gateway_cache_encryption_key: SecretStr | None = None
+    gateway_guardrail_version: str = Field(default="phase2-v1", min_length=1, max_length=64)
+    gateway_guardrail_test_block_token: str = Field(
+        default="BLOCK_ME_PHASE2",
+        min_length=1,
+        max_length=128,
+    )
     openai_api_key: str | None = Field(default=None, min_length=1)
     openai_base_url: str = Field(
         default="https://api.openai.com/v1",
         min_length=1,
         max_length=2048,
     )
-    generate_provider_name: str = Field(default="openai", min_length=1, max_length=128)
-    generate_provider_adapter: str = Field(
+    ollama_base_url: str = Field(
+        default="http://127.0.0.1:11434",
+        min_length=1,
+        max_length=2048,
+    )
+    generate_primary_provider_adapter: str = Field(
         default="openai_responses",
         min_length=1,
         max_length=128,
     )
     generate_gateway_model: str = Field(default="gateway-default", min_length=1, max_length=255)
-    generate_upstream_model: str = Field(default="gpt-4.1-mini", min_length=1, max_length=255)
-    generate_currency: str = Field(default="USD", min_length=3, max_length=3)
-    generate_input_cost_per_million: Decimal = Field(default=Decimal("0.4000000000"), ge=0)
-    generate_cached_input_cost_per_million: Decimal = Field(
+    generate_openai_upstream_model: str = Field(
+        default="gpt-4.1-mini",
+        min_length=1,
+        max_length=255,
+    )
+    generate_openai_currency: str = Field(default="USD", min_length=3, max_length=3)
+    generate_openai_input_cost_per_million: Decimal = Field(
+        default=Decimal("0.4000000000"),
+        ge=0,
+    )
+    generate_openai_cached_input_cost_per_million: Decimal = Field(
         default=Decimal("0.1000000000"),
         ge=0,
     )
-    generate_output_cost_per_million: Decimal = Field(default=Decimal("1.6000000000"), ge=0)
+    generate_openai_output_cost_per_million: Decimal = Field(
+        default=Decimal("1.6000000000"),
+        ge=0,
+    )
+    generate_llama_enabled: bool = False
+    generate_llama_adapter: str = Field(
+        default="ollama_generate",
+        min_length=1,
+        max_length=128,
+    )
+    generate_llama_upstream_model: str = Field(
+        default="llama3.2:3b",
+        min_length=1,
+        max_length=255,
+    )
+    generate_qwen_enabled: bool = False
+    generate_qwen_adapter: str = Field(
+        default="ollama_generate",
+        min_length=1,
+        max_length=128,
+    )
+    generate_qwen_upstream_model: str = Field(
+        default="qwen2.5-coder:3b",
+        min_length=1,
+        max_length=255,
+    )
+    gateway_api_keys: tuple["GatewayApiKeyConfig", ...] = ()
     live_smoke_enabled: bool = False
 
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, value: str | None) -> str | None:
         return normalize_runtime_database_url(value)
+
+    @field_validator("gateway_cache_encryption_key", mode="before")
+    @classmethod
+    def validate_cache_encryption_key(cls, value: object) -> object:
+        if value is None:
+            return None
+        raw_value = value.get_secret_value() if isinstance(value, SecretStr) else str(value)
+        try:
+            decoded = base64.b64decode(
+                raw_value.encode("ascii"),
+                altchars=b"-_",
+                validate=True,
+            )
+        except (UnicodeEncodeError, binascii.Error) as exc:
+            raise ValueError("cache encryption key must be URL-safe base64") from exc
+        if len(decoded) != 32:
+            raise ValueError("cache encryption key must decode to exactly 32 bytes")
+        return value
+
+    @model_validator(mode="after")
+    def validate_gateway_api_key_uniqueness(self) -> "Settings":
+        keys = [item.key for item in self.gateway_api_keys]
+        api_key_ids = [item.api_key_id for item in self.gateway_api_keys]
+        if len(keys) != len(set(keys)):
+            raise ValueError("gateway API keys must be unique")
+        if len(api_key_ids) != len(set(api_key_ids)):
+            raise ValueError("gateway API key IDs must be unique")
+        return self
+
+
+class GatewayApiKeyConfig(BaseModel):
+    api_key_id: UUID
+    actor_id: UUID
+    key: str = Field(min_length=1, max_length=512)
+    enabled: bool = True
+    request_quota_limit: int | None = Field(default=None, ge=1)
+    allowed_providers: tuple[Literal["openai", "llama", "qwen"], ...] | None = None
 
 
 @lru_cache

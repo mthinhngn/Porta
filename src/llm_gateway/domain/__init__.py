@@ -15,8 +15,14 @@ from llm_gateway.domain.generate import (
     GenerateResponse,
     GenerateTokenUsage,
 )
+from llm_gateway.domain.phase2 import (
+    AuthenticatedActor,
+    GuardrailDecision,
+    Phase2ResponseMetadata,
+)
 
 __all__ = [
+    "AuthenticatedActor",
     "ChatCompletionChoice",
     "ChatCompletionRequest",
     "ChatCompletionResponse",
@@ -28,5 +34,7 @@ __all__ = [
     "GenerateRequest",
     "GenerateResponse",
     "GenerateTokenUsage",
+    "GuardrailDecision",
+    "Phase2ResponseMetadata",
     "TokenUsage",
 ]
