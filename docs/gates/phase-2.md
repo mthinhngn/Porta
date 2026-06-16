@@ -12,14 +12,17 @@ passed in this record.
 ## Candidate
 
 - Reviewed implementation SHA: `e7e917a413ce577f26af2b16aebf294d7ec35f3b`
+- Prior evidence/review SHA: `7420d747b23dafb4b4777d5e655d284a48725ef8`
 - Branch: `codex/p2-secure-gateway`
 - Remote: private `mthinhngn/llm-gateway`
 - Provider scope: OpenAI primary plus local Ollama fallbacks
 - Local fallback models: `llama3.2:3b` and `qwen2.5-coder:3b`
 - Removed from current Phase 2 scope: Anthropic and Gemini cloud fallbacks
 
-This closeout document is evidence-only. Verify the exact evidence commit with
-`git rev-parse HEAD` and `git rev-parse origin/codex/p2-secure-gateway`.
+This closeout document is evidence-only. Because this file can change during
+closeout, the final closeout SHA is established by `git rev-parse HEAD` after
+the evidence commit is pushed and by reviewer confirmation that
+`origin/codex/p2-secure-gateway` points to the same SHA.
 
 ## Verdict rule
 
