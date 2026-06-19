@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field, SecretStr, field_validator, model_validat
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
+ENV_FILES = (".env", ".env.local")
+
 
 def normalize_runtime_database_url(value: str | None) -> str | None:
     """Require a synchronous PostgreSQL driver for the synchronous ledger."""
@@ -169,4 +171,4 @@ class GatewayApiKeyConfig(BaseModel):
 def get_settings() -> Settings:
     """Load and cache validated process configuration."""
 
-    return Settings(_env_file=".env", _env_file_encoding="utf-8")
+    return Settings(_env_file=ENV_FILES, _env_file_encoding="utf-8")

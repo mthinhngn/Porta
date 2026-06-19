@@ -36,12 +36,37 @@ def test_get_settings_loads_dotenv(
     assert get_settings().environment == "staging"
 
 
+def test_get_settings_loads_dotenv_local(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env.local").write_text(
+        "LLM_GATEWAY_OPENAI_API_KEY=sk-test-local-key\n",
+        encoding="utf-8",
+    )
+
+    assert get_settings().openai_api_key == "sk-test-local-key"
+
+
+def test_dotenv_local_overrides_dotenv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("LLM_GATEWAY_LOG_LEVEL=WARNING\n", encoding="utf-8")
+    (tmp_path / ".env.local").write_text("LLM_GATEWAY_LOG_LEVEL=ERROR\n", encoding="utf-8")
+
+    assert get_settings().log_level == "ERROR"
+
+
 def test_environment_overrides_dotenv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text("LLM_GATEWAY_LOG_LEVEL=WARNING\n", encoding="utf-8")
+    (tmp_path / ".env.local").write_text("LLM_GATEWAY_LOG_LEVEL=INFO\n", encoding="utf-8")
     monkeypatch.setenv("LLM_GATEWAY_LOG_LEVEL", "ERROR")
 
     assert get_settings().log_level == "ERROR"

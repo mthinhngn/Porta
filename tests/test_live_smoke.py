@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from llm_gateway.core.config import Settings
+from llm_gateway.core.config import ENV_FILES, Settings
 from llm_gateway.main import create_app
 from llm_gateway.persistence import Base, GatewayRequest, ProviderAttempt, UsageRecord
 
@@ -75,9 +75,9 @@ def test_live_generate_smoke(tmp_path: Path) -> None:
     Base.metadata.create_all(engine)
     sessions = sessionmaker(bind=engine, expire_on_commit=False)
 
-    dotenv_settings = Settings(_env_file=".env", _env_file_encoding="utf-8")
+    dotenv_settings = Settings(_env_file=ENV_FILES, _env_file_encoding="utf-8")
     assert dotenv_settings.openai_api_key is not None, (
-        "set LLM_GATEWAY_OPENAI_API_KEY in the ignored .env file"
+        "set LLM_GATEWAY_OPENAI_API_KEY in ignored .env.local"
     )
     settings = _live_settings(
         database_url=f"sqlite:///{database_path}",

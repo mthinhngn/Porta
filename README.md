@@ -118,8 +118,10 @@ uv python install 3.12
 uv sync --frozen
 ```
 
-Copy `.env.example` to `.env` only when local overrides are needed. The ignored
-`.env` file is for local secrets; never put real keys in `.env.example`.
+Copy `.env.example` to `.env` only when shared local defaults are needed. Put
+private machine-only secrets in ignored `.env.local`; the gateway loads `.env`
+first and `.env.local` second, so `.env.local` can override local defaults.
+Never put real keys in `.env.example`.
 
 Important runtime settings:
 
@@ -128,6 +130,14 @@ Important runtime settings:
 - `LLM_GATEWAY_OPENAI_API_KEY`
 - `LLM_GATEWAY_GATEWAY_API_KEYS`
 - `LLM_GATEWAY_OLLAMA_BASE_URL`
+
+One-time local OpenAI key setup:
+
+```powershell
+Add-Content .env.local 'LLM_GATEWAY_OPENAI_API_KEY=your-real-openai-key'
+```
+
+Restart the gateway after changing `.env.local`.
 
 ## Run
 
