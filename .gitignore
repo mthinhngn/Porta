@@ -30,6 +30,7 @@ build/
 site/
 .hatch/
 .uv-cache/
+.uv-cache-*/
 .cache/
 *.sqlite
 *.sqlite3
