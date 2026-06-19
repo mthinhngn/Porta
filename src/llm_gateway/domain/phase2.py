@@ -14,6 +14,7 @@ class AuthenticatedActor(ContractModel):
     actor_id: UUID
     api_key_id: UUID
     enabled: bool
+    is_admin: bool = False
     request_quota_limit: Annotated[int | None, Field(ge=1)] = None
     allowed_providers: tuple[Literal["openai", "llama", "qwen"], ...] | None = None
 

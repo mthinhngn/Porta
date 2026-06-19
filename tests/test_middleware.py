@@ -159,6 +159,27 @@ def test_unknown_path_and_request_metadata_are_not_logged(
     }
 
 
+def test_unknown_path_and_request_metadata_are_not_recorded_as_metric_labels() -> None:
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        await send({"type": "http.response.start", "status": 404, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    scope = _http_scope(
+        [(b"authorization", b"Bearer private-token")],
+        path="/unknown/private-prompt",
+    )
+    scope["query_string"] = b"completion=private-completion"
+
+    _run_middleware(app, scope)
+
+    from llm_gateway.core.metrics import generate_metrics
+
+    body = generate_metrics().decode("utf-8")
+    assert "private-prompt" not in body
+    assert "private-token" not in body
+    assert "private-completion" not in body
+
+
 def test_context_is_reset_when_access_logging_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

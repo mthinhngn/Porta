@@ -13,6 +13,11 @@ from typing import ParamSpec, TypeVar
 from uuid import UUID
 
 from llm_gateway.core.errors import ApiError
+from llm_gateway.core.metrics import (
+    record_generate_event,
+    record_ledger_operation,
+    record_provider_attempt,
+)
 from llm_gateway.core.task_routing import TASK_ROUTING_VERSION, classify_task
 from llm_gateway.domain import GenerateCost, GenerateRequest, GenerateResponse, GenerateTokenUsage
 from llm_gateway.persistence.ledger import GatewayLedger, GatewayRoute, RouteBootstrap, UsageCost
@@ -121,13 +126,27 @@ class GenerationService:
 
     @staticmethod
     async def _run_ledger(callable_: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
+        started_at = perf_counter()
         task = asyncio.create_task(asyncio.to_thread(callable_, *args, **kwargs))
         try:
-            return await asyncio.shield(task)
+            result = await asyncio.shield(task)
         except asyncio.CancelledError:
             # Database threads cannot be force-cancelled safely. Let the
             # transaction settle before the request task can release its lease.
-            return await task
+            result = await task
+        except Exception:
+            record_ledger_operation(
+                operation=getattr(callable_, "__name__", "unknown"),
+                result="failure",
+                duration_seconds=perf_counter() - started_at,
+            )
+            raise
+        record_ledger_operation(
+            operation=getattr(callable_, "__name__", "unknown"),
+            result="success",
+            duration_seconds=perf_counter() - started_at,
+        )
+        return result
 
     @property
     def cache_namespace(self) -> str:
@@ -166,6 +185,12 @@ class GenerationService:
         ]
         configured_routes = [route for route in resolved_routes if route is not None]
         if not configured_routes:
+            record_generate_event(
+                stage="generate",
+                result="failure",
+                model_alias=request.model,
+                error_code="model_not_found",
+            )
             raise ApiError(
                 message="Model is unavailable.",
                 type="invalid_request_error",
@@ -180,6 +205,12 @@ class GenerationService:
             if allowed is None or route.provider_name in allowed
         ]
         if not routes:
+            record_generate_event(
+                stage="generate",
+                result="failure",
+                model_alias=request.model,
+                error_code="provider_access_denied",
+            )
             raise ApiError(
                 message="Provider access is not allowed.",
                 type="invalid_request_error",
@@ -213,6 +244,13 @@ class GenerationService:
                             request_id=request_id,
                             error=timeout_error,
                         )
+                        record_generate_event(
+                            stage="generate",
+                            result="failure",
+                            provider=route.provider_name,
+                            model_alias=route.gateway_model,
+                            error_code=timeout_error.code,
+                        )
                         raise _error_from_provider(timeout_error)
                     current_attempt_id = await self._run_ledger(
                         self._ledger.begin_attempt,
@@ -234,6 +272,13 @@ class GenerationService:
                         error=coordination_error,
                         attempt_status="failed",
                     )
+                    record_generate_event(
+                        stage="generate",
+                        result="failure",
+                        provider=route.provider_name,
+                        model_alias=route.gateway_model,
+                        error_code=coordination_error.code,
+                    )
                     raise ApiError(
                         message="Cache coordination was lost.",
                         type="server_error",
@@ -249,6 +294,13 @@ class GenerationService:
                         latency_started_at=perf_counter(),
                         error=timeout_error,
                         attempt_status="timed_out",
+                    )
+                    record_generate_event(
+                        stage="generate",
+                        result="failure",
+                        provider=route.provider_name,
+                        model_alias=route.gateway_model,
+                        error_code=timeout_error.code,
                     )
                     raise _error_from_provider(timeout_error)
 
@@ -272,6 +324,13 @@ class GenerationService:
                             latency_started_at=perf_counter(),
                             error=coordination_error,
                             attempt_status="failed",
+                        )
+                        record_generate_event(
+                            stage="generate",
+                            result="failure",
+                            provider=outcome.route.provider_name,
+                            model_alias=outcome.route.gateway_model,
+                            error_code=coordination_error.code,
                         )
                         raise ApiError(
                             message="Cache coordination was lost.",
@@ -311,12 +370,25 @@ class GenerationService:
                     continue
                 if not is_retryable:
                     await self._finalize_request_failure(request_id=request_id, error=outcome)
+                    record_generate_event(
+                        stage="generate",
+                        result="failure",
+                        provider=route.provider_name,
+                        model_alias=route.gateway_model,
+                        error_code=outcome.code,
+                    )
                     raise _error_from_provider(outcome)
                 break
 
         if last_error is None:
             last_error = ProviderUnavailableError("Provider is unavailable.")
         await self._finalize_request_failure(request_id=request_id, error=last_error)
+        record_generate_event(
+            stage="generate",
+            result="failure",
+            model_alias=request.model,
+            error_code=last_error.code,
+        )
         raise _error_from_provider(last_error)
 
     def _ordered_providers(self, request: GenerateRequest) -> tuple[str, ...]:
@@ -388,6 +460,13 @@ class GenerationService:
                 error=missing_provider_error,
                 attempt_status="failed",
             )
+            record_provider_attempt(
+                provider=route.provider_name,
+                model_alias=route.gateway_model,
+                attempt_status="failed",
+                error_code=missing_provider_error.code,
+                duration_seconds=perf_counter() - started_at,
+            )
             return missing_provider_error
 
         context = GenerateProviderContext(
@@ -410,6 +489,13 @@ class GenerationService:
                 error=provider_error,
                 attempt_status="timed_out",
             )
+            record_provider_attempt(
+                provider=route.provider_name,
+                model_alias=route.gateway_model,
+                attempt_status="timed_out",
+                error_code=provider_error.code,
+                duration_seconds=perf_counter() - started_at,
+            )
             return provider_error
         except ProviderError as error:
             attempt_status = "timed_out" if isinstance(error, ProviderTimeoutError) else "failed"
@@ -419,6 +505,13 @@ class GenerationService:
                 latency_started_at=started_at,
                 error=error,
                 attempt_status=attempt_status,
+            )
+            record_provider_attempt(
+                provider=route.provider_name,
+                model_alias=route.gateway_model,
+                attempt_status=attempt_status,
+                error_code=error.code,
+                duration_seconds=perf_counter() - started_at,
             )
             return error
         except Exception:
@@ -430,7 +523,20 @@ class GenerationService:
                 error=unexpected_provider_error,
                 attempt_status="failed",
             )
+            record_provider_attempt(
+                provider=route.provider_name,
+                model_alias=route.gateway_model,
+                attempt_status="failed",
+                error_code=unexpected_provider_error.code,
+                duration_seconds=perf_counter() - started_at,
+            )
             return unexpected_provider_error
+        record_provider_attempt(
+            provider=route.provider_name,
+            model_alias=route.gateway_model,
+            attempt_status="succeeded",
+            duration_seconds=perf_counter() - started_at,
+        )
         return _ResolvedAttempt(
             route=route,
             attempt_id=attempt_id,

@@ -1,5 +1,13 @@
 """Public, transport-neutral gateway contracts."""
 
+from llm_gateway.domain.analytics import (
+    AnalyticsAttemptSummary,
+    AnalyticsCostTotal,
+    AnalyticsReconciliationSummary,
+    AnalyticsStatusCount,
+    AnalyticsUsageSummary,
+    AnalyticsUsageTotals,
+)
 from llm_gateway.domain.chat import (
     ChatCompletionChoice,
     ChatCompletionRequest,
@@ -22,6 +30,12 @@ from llm_gateway.domain.phase2 import (
 )
 
 __all__ = [
+    "AnalyticsAttemptSummary",
+    "AnalyticsCostTotal",
+    "AnalyticsReconciliationSummary",
+    "AnalyticsStatusCount",
+    "AnalyticsUsageSummary",
+    "AnalyticsUsageTotals",
     "AuthenticatedActor",
     "ChatCompletionChoice",
     "ChatCompletionRequest",

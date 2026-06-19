@@ -39,6 +39,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = app_settings
         app.state.generation_service = generation_service
+        app.state.session_factory = session_factory
         app.state.redis_client = redis_client
         app.state.ollama_client = ollama_client
         app.state.owns_ollama_client = False

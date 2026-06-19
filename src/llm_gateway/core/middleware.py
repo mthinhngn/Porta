@@ -10,6 +10,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from llm_gateway.core.context import bind_correlation_id, reset_correlation_id
 from llm_gateway.core.logging import log_event, sanitize_log_message
+from llm_gateway.core.metrics import record_http_request
 
 CORRELATION_ID_PATTERN = re.compile(r"^[0-9a-fA-F]{32}$")
 logger = logging.getLogger("llm_gateway.requests")
@@ -78,13 +79,20 @@ class CorrelationIdMiddleware:
             await self.app(scope, receive, send_with_correlation)
         finally:
             try:
+                duration_seconds = perf_counter() - started_at
+                route_template = _trusted_route_template(scope)
+                record_http_request(
+                    method=scope["method"],
+                    route_template=route_template,
+                    status_code=status_code,
+                    duration_seconds=duration_seconds,
+                )
                 fields: dict[str, Any] = {
                     "method": scope["method"],
                     "status_code": status_code,
-                    "duration_ms": round((perf_counter() - started_at) * 1000, 3),
+                    "duration_ms": round(duration_seconds * 1000, 3),
                     "correlation_id": correlation_id,
                 }
-                route_template = _trusted_route_template(scope)
                 if route_template is not None:
                     fields["path"] = route_template
                 log_event(

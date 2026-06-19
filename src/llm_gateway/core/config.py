@@ -160,6 +160,7 @@ class GatewayApiKeyConfig(BaseModel):
     actor_id: UUID
     key: str = Field(min_length=1, max_length=512)
     enabled: bool = True
+    is_admin: bool = False
     request_quota_limit: int | None = Field(default=None, ge=1)
     allowed_providers: tuple[Literal["openai", "llama", "qwen"], ...] | None = None
 

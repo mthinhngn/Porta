@@ -1,0 +1,106 @@
+groups:
+  - name: llm-gateway-observability
+    rules:
+      - alert: LlmGatewayHigh5xxRate
+        expr: |
+          sum(rate(llm_gateway_http_requests_total{status_family="5xx"}[5m]))
+          /
+          clamp_min(sum(rate(llm_gateway_http_requests_total[5m])), 0.001)
+          > 0.05
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: LLM Gateway 5xx responses are elevated
+          runbook: docs/observability/runbook.md#high-5xx-rate
+
+      - alert: LlmGatewayProviderFailuresSpike
+        expr: |
+          sum by (provider, error_code) (
+            increase(llm_gateway_provider_attempts_total{
+              error_code=~"provider_timeout|provider_rate_limit|provider_unavailable"
+            }[5m])
+          ) > 5
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: LLM Gateway provider failures are elevated
+          runbook: docs/observability/runbook.md#provider-failures
+
+      - alert: LlmGatewayQuotaUnavailable
+        expr: |
+          sum(increase(llm_gateway_quota_events_total{result="unavailable"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: LLM Gateway quota service is unavailable
+          runbook: docs/observability/runbook.md#quota-unavailable
+
+      - alert: LlmGatewayCacheCoordinationLoss
+        expr: |
+          sum(increase(llm_gateway_cache_events_total{
+            cache_status=~"unavailable|publish_failure"
+          }[5m])) > 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: LLM Gateway cache coordination or publication failed
+          runbook: docs/observability/runbook.md#cache-coordination
+
+      - alert: LlmGatewayLedgerOperationFailures
+        expr: |
+          sum(increase(llm_gateway_ledger_operation_duration_seconds_count{
+            result="failure"
+          }[5m])) > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: LLM Gateway ledger operation failed
+          runbook: docs/observability/runbook.md#ledger-and-reconciliation
+
+      - alert: LlmGatewayHighGenerateLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(llm_gateway_generate_duration_seconds_bucket[10m]))
+          ) > 10
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: LLM Gateway generate p95 latency is high
+          runbook: docs/observability/runbook.md#latency
+
+      - alert: LlmGatewayHighProviderLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, provider) (
+              rate(llm_gateway_provider_attempt_duration_seconds_bucket[10m])
+            )
+          ) > 10
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: LLM Gateway provider p95 latency is high
+          runbook: docs/observability/runbook.md#latency
+
+      - alert: LlmGatewayNoSuccessfulGenerations
+        expr: |
+          sum(increase(llm_gateway_http_requests_total{route="/v1/generate"}[10m])) > 0
+          and
+          sum(increase(llm_gateway_generate_events_total{
+            stage="generate",
+            result="success"
+          }[10m])) == 0
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: LLM Gateway is receiving generate traffic with no successes
+          runbook: docs/observability/runbook.md#no-successes
