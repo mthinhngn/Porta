@@ -92,7 +92,7 @@ the gateway route, metrics, analytics, and ledger reconciliation path.
 | Grafana dashboard JSON parse | PASS; title `LLM Gateway Observability`; 7 panels |
 | Prometheus alert YAML parse | PASS; 1 group; 8 rules |
 | Alert/runbook metric reference check | PASS via `tests/test_observability_docs.py` in the full pytest suite |
-| `promtool check rules` | NOT RUN; `promtool` is not installed locally and Docker Desktop daemon was not running |
+| `promtool check rules docs\observability\prometheus-alerts.yml` | PASS; Prometheus `v3.12.0` Windows amd64 `promtool` returned `SUCCESS: 8 rules found` |
 
 ## Review Focus
 
@@ -108,7 +108,5 @@ the gateway route, metrics, analytics, and ledger reconciliation path.
 
 - Live OpenAI smoke, local Ollama smoke, and real Redis concurrency smoke remain
   opt-in integration gates and were deferred for the reasons listed above.
-- `promtool` validation should be rerun in an environment where Prometheus
-  tooling or Docker Desktop is available.
 - A human or separate read-only Review Manager should re-check the final pushed
   SHA before starting Phase 4 work.
