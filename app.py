@@ -635,7 +635,8 @@ HTML = r"""
       <div>
         <h1>Modern LLM Gateway Interface</h1>
         <div class="subtitle">
-          Local observability, controlled generation smoke tests, and ledger analytics in one operator-focused surface.
+          Local observability, controlled generation smoke tests, and ledger analytics
+          in one operator-focused surface.
         </div>
       </div>
       <div class="status-strip">

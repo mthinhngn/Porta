@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Model Playground</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-tint": "#4edea3",
+                      "on-tertiary-container": "#1f2994",
+                      "on-background": "#dae2fd",
+                      "on-surface": "#dae2fd",
+                      "surface-container": "#171f33",
+                      "secondary": "#7bd0ff",
+                      "primary-container": "#10b981",
+                      "on-secondary-container": "#00374d",
+                      "error": "#ffb4ab",
+                      "tertiary-container": "#909aff",
+                      "surface-container-high": "#222a3d",
+                      "surface-variant": "#2d3449",
+                      "inverse-surface": "#dae2fd",
+                      "on-primary-fixed-variant": "#005236",
+                      "on-error": "#690005",
+                      "inverse-on-surface": "#283044",
+                      "surface-dim": "#0b1326",
+                      "secondary-fixed-dim": "#7bd0ff",
+                      "surface-bright": "#31394d",
+                      "secondary-fixed": "#c4e7ff",
+                      "outline": "#86948a",
+                      "secondary-container": "#00a6e0",
+                      "background": "#0b1326",
+                      "outline-variant": "#3c4a42",
+                      "surface-container-lowest": "#060e20",
+                      "on-secondary-fixed": "#001e2c",
+                      "on-error-container": "#ffdad6",
+                      "on-secondary-fixed-variant": "#004c69",
+                      "on-primary-container": "#00422b",
+                      "tertiary": "#bdc2ff",
+                      "on-primary": "#003824",
+                      "primary-fixed-dim": "#4edea3",
+                      "on-tertiary-fixed-variant": "#2f3aa3",
+                      "on-tertiary": "#131e8c",
+                      "tertiary-fixed-dim": "#bdc2ff",
+                      "on-secondary": "#00354a",
+                      "inverse-primary": "#006c49",
+                      "surface-container-low": "#131b2e",
+                      "on-primary-fixed": "#002113",
+                      "tertiary-fixed": "#e0e0ff",
+                      "on-tertiary-fixed": "#000767",
+                      "error-container": "#93000a",
+                      "on-surface-variant": "#bbcabf",
+                      "primary": "#4edea3",
+                      "primary-fixed": "#6ffbbe",
+                      "surface-container-highest": "#2d3449",
+                      "surface": "#0b1326"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "margin-mobile": "16px",
+                      "gutter": "16px",
+                      "max-width": "1440px",
+                      "md": "16px",
+                      "xs": "4px",
+                      "xl": "48px",
+                      "margin-desktop": "32px",
+                      "lg": "24px",
+                      "sm": "8px",
+                      "base": "4px"
+              },
+              "fontFamily": {
+                      "body-sm": [
+                              "Geist"
+                      ],
+                      "headline-xl": [
+                              "Geist"
+                      ],
+                      "code-block": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-lg-mobile": [
+                              "Geist"
+                      ],
+                      "body-md": [
+                              "Geist"
+                      ],
+                      "label-mono": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-lg": [
+                              "Geist"
+                      ]
+              },
+              "fontSize": {
+                      "body-sm": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-xl": [
+                              "40px",
+                              {
+                                      "lineHeight": "48px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "code-block": [
+                              "14px",
+                              {
+                                      "lineHeight": "22px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-mono": [
+                              "13px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.02em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-lg": [
+                              "30px",
+                              {
+                                      "lineHeight": "38px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        .terminal-scroll::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .terminal-scroll::-webkit-scrollbar-track {
+            background: #0b1326; 
+        }
+        .terminal-scroll::-webkit-scrollbar-thumb {
+            background: #2d3449; 
+            border-radius: 4px;
+        }
+        .terminal-scroll::-webkit-scrollbar-thumb:hover {
+            background: #3c4a42; 
+        }
+      </style>
+</head>
+<body class="bg-background text-on-background font-body-md h-screen flex overflow-hidden selection:bg-primary-container selection:text-on-primary-container">
+
+<!-- SideNavBar -->
+<nav class="bg-surface-container-low dark:bg-surface-dim h-screen w-64 fixed left-0 top-0 bg-surface-container-low border-r border-outline-variant flex flex-col h-full z-20 hidden md:flex">
+<div class="p-6 border-b border-outline-variant">
+<h1 class="font-headline-lg text-headline-lg text-primary tracking-tight">Model Playground</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">v1.0.4-stable</p>
+</div>
+<div class="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors duration-200 font-body-sm text-body-sm" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors duration-200 font-body-sm text-body-sm" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="extension">extension</span>
+<span>Models</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors duration-200 font-body-sm text-body-sm" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="security">security</span>
+<span>Guardrails</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors duration-200 font-body-sm text-body-sm" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="list_alt">list_alt</span>
+<span>Logs</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors duration-200 font-body-sm text-body-sm" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="insights">insights</span>
+<span>Pulse</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-primary bg-surface-variant font-bold border-l-2 border-primary transition-colors duration-200 font-body-sm text-body-sm opacity-80" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="terminal">terminal</span>
+<span>Playground</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors duration-200 font-body-sm text-body-sm" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="analytics">analytics</span>
+<span>Analytics</span>
+</a>
+</div>
+<div class="p-4 border-t border-outline-variant flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors duration-200 font-body-sm text-body-sm" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="settings">settings</span>
+<span>Settings</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors duration-200 font-body-sm text-body-sm" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="help">help</span>
+<span>Support</span>
+</a>
+</div>
+</nav>
+<!-- TopAppBar -->
+<header class="bg-surface-container-low dark:bg-surface-dim fixed top-0 right-0 w-full md:w-[calc(100%-16rem)] h-16 bg-surface-container-low border-b border-outline-variant flex items-center justify-between px-margin-mobile md:px-margin-desktop z-10 hidden md:flex"><div class="flex items-center gap-4 flex-1">
+<!-- Logo/Product Name -->
+<div class="flex items-center gap-2 mr-8">
+<span class="material-symbols-outlined text-primary text-2xl" data-icon="hub">hub</span>
+<h1 class="font-headline-lg-mobile text-on-surface tracking-tight whitespace-nowrap">Model Playground</h1>
+</div>
+<!-- Search Bar -->
+<div class="hidden md:flex items-center bg-surface-container-high rounded-full px-4 py-2 w-full max-w-md focus-within:ring-2 focus-within:ring-primary focus-within:bg-surface transition-all border border-transparent focus-within:border-primary">
+<span class="material-symbols-outlined text-on-surface-variant mr-2 text-xl" data-icon="search">search</span>
+<input class="bg-transparent border-none text-on-surface font-body-sm w-full focus:ring-0 placeholder:text-on-surface-variant/60 p-0 h-6" placeholder="Search models, prompt history..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors p-2 rounded-full hover:bg-surface-container-highest hidden sm:flex">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors p-2 rounded-full hover:bg-surface-container-highest relative">
+<span class="material-symbols-outlined" data-icon="light_mode">light_mode</span>
+</button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors p-2 rounded-full hover:bg-surface-container-highest relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors p-2 rounded-full hover:bg-surface-container-highest">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+<div class="w-px h-6 bg-outline-variant mx-1 hidden sm:block"></div>
+<button class="bg-primary text-on-primary font-body-sm font-semibold px-4 py-2 rounded-full hover:bg-primary/90 transition-colors active:scale-95 flex items-center gap-2 ml-1 shadow-sm">
+<span class="material-symbols-outlined text-[18px]" data-icon="rocket_launch">rocket_launch</span>
+<span class="hidden sm:inline">Deploy</span>
+</button>
+</div></header>
+<!-- Main Content Area -->
+<main class="flex-1 ml-0 md:ml-64 mt-16 flex flex-col h-[calc(100vh-4rem)] bg-background overflow-hidden relative">
+<!-- Split Screen Comparison -->
+<div class="flex-1 flex flex-col lg:flex-row overflow-hidden border-b border-surface-variant">
+<!-- Model A: Claude 3.5 Sonnet -->
+<div class="flex-1 flex flex-col border-b lg:border-b-0 lg:border-r border-surface-variant bg-surface-container-lowest">
+<!-- Header -->
+<div class="p-4 border-b border-surface-variant bg-surface flex justify-between items-center shrink-0">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-md bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold font-label-mono text-label-mono">
+                            C
+                        </div>
+<div>
+<h3 class="font-body-md text-body-md font-semibold text-on-surface">Claude 3.5 Sonnet</h3>
+<span class="font-label-mono text-label-mono text-on-surface-variant opacity-70">Anthropic</span>
+</div>
+</div>
+<div class="flex gap-2">
+<span class="px-2 py-1 bg-surface-variant text-on-surface-variant rounded font-label-mono text-label-mono text-[11px] border border-outline-variant">Temp: 0.7</span>
+</div>
+</div>
+<!-- Output Area -->
+<div class="flex-1 overflow-y-auto p-6 font-body-md text-body-md text-on-surface terminal-scroll">
+<p class="mb-4">Here is the Python function to implement a generic rate limiter using Redis and the token bucket algorithm:</p>
+<div class="bg-surface-container-high border border-outline-variant rounded-md overflow-hidden mb-6">
+<div class="bg-surface-variant px-4 py-2 flex justify-between items-center border-b border-outline-variant">
+<span class="font-label-mono text-label-mono text-on-surface-variant text-xs">python</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined text-sm" data-icon="content_copy">content_copy</span></button>
+</div>
+<pre class="p-4 font-code-block text-code-block text-on-surface overflow-x-auto"><code><span class="text-secondary">import</span> time
+<span class="text-secondary">import</span> redis
+
+<span class="text-primary-container">class</span> <span class="text-tertiary">RateLimiter</span>:
+    <span class="text-primary-container">def</span> <span class="text-tertiary">__init__</span>(self, redis_client, capacity, fill_rate):
+        self.redis = redis_client
+        self.capacity = capacity
+        self.fill_rate = fill_rate
+
+    <span class="text-primary-container">def</span> <span class="text-tertiary">allow_request</span>(self, user_id):
+        key = <span class="text-secondary">f"rate_limit:{user_id}"</span>
+        
+        <span class="text-on-surface-variant"># Complex logic handled via lua script for atomicity</span>
+        lua_script = <span class="text-secondary">"""
+        local capacity = tonumber(ARGV[1])
+        local fill_rate = tonumber(ARGV[2])
+        local now = tonumber(ARGV[3])
+        -- Implementation details omitted for brevity
+        return 1
+        """</span>
+        <span class="text-primary-container">return</span> True</code></pre>
+</div>
+<p>This implementation guarantees atomicity by utilizing Redis Lua scripting, preventing race conditions in distributed environments.</p>
+</div>
+<!-- Metrics Footer -->
+<div class="p-4 bg-surface border-t border-surface-variant shrink-0 grid grid-cols-3 gap-4">
+<div class="flex flex-col">
+<span class="font-label-mono text-label-mono text-on-surface-variant text-[10px] uppercase tracking-wider mb-1">Latency</span>
+<div class="flex items-center gap-2">
+<span class="font-code-block text-code-block text-on-surface font-medium">842ms</span>
+<span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-primary-container/20 text-primary border border-primary/30">Winner</span>
+</div>
+</div>
+<div class="flex flex-col">
+<span class="font-label-mono text-label-mono text-on-surface-variant text-[10px] uppercase tracking-wider mb-1">Tokens (In/Out)</span>
+<span class="font-code-block text-code-block text-on-surface font-medium">42 / 185</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-mono text-label-mono text-on-surface-variant text-[10px] uppercase tracking-wider mb-1">Est. Cost</span>
+<span class="font-code-block text-code-block text-on-surface font-medium">$0.0031</span>
+</div>
+</div>
+</div>
+<!-- Model B: GPT-4o -->
+<div class="flex-1 flex flex-col bg-surface-container-lowest">
+<!-- Header -->
+<div class="p-4 border-b border-surface-variant bg-surface flex justify-between items-center shrink-0">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-md bg-tertiary-container text-on-tertiary-container flex items-center justify-center font-bold font-label-mono text-label-mono">
+                            G
+                        </div>
+<div>
+<h3 class="font-body-md text-body-md font-semibold text-on-surface">GPT-4o</h3>
+<span class="font-label-mono text-label-mono text-on-surface-variant opacity-70">OpenAI</span>
+</div>
+</div>
+<div class="flex gap-2">
+<span class="px-2 py-1 bg-surface-variant text-on-surface-variant rounded font-label-mono text-label-mono text-[11px] border border-outline-variant">Temp: 0.7</span>
+</div>
+</div>
+<!-- Output Area -->
+<div class="flex-1 overflow-y-auto p-6 font-body-md text-body-md text-on-surface terminal-scroll">
+<p class="mb-4">Certainly! Below is a robust Python implementation of a Redis-backed rate limiter utilizing the token bucket strategy:</p>
+<div class="bg-surface-container-high border border-outline-variant rounded-md overflow-hidden mb-6">
+<div class="bg-surface-variant px-4 py-2 flex justify-between items-center border-b border-outline-variant">
+<span class="font-label-mono text-label-mono text-on-surface-variant text-xs">python</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined text-sm" data-icon="content_copy">content_copy</span></button>
+</div>
+<pre class="p-4 font-code-block text-code-block text-on-surface overflow-x-auto"><code><span class="text-secondary">import</span> time
+<span class="text-secondary">import</span> redis
+
+<span class="text-primary-container">class</span> <span class="text-tertiary">TokenBucketRateLimiter</span>:
+    <span class="text-primary-container">def</span> <span class="text-tertiary">__init__</span>(self, redis_client: redis.Redis, capacity: int, fill_rate: float):
+        self.redis = redis_client
+        self.capacity = capacity
+        self.fill_rate = fill_rate
+
+    <span class="text-primary-container">def</span> <span class="text-tertiary">is_allowed</span>(self, user_id: str) -&gt; bool:
+        key = <span class="text-secondary">f"rate_limit:{user_id}"</span>
+        
+        <span class="text-on-surface-variant"># Use pipeline to minimize round trips</span>
+        pipe = self.redis.pipeline()
+        now = time.time()
+        
+        <span class="text-on-surface-variant"># Basic non-atomic implementation for demonstration</span>
+        current_tokens = self.redis.get(key)
+        <span class="text-primary-container">if</span> current_tokens <span class="text-primary-container">is</span> <span class="text-secondary">None</span>:
+            self.redis.set(key, self.capacity - 1)
+            <span class="text-primary-container">return</span> True
+            
+        <span class="text-primary-container">return</span> False</code></pre>
+</div>
+<p>Note: For production environments, it is highly recommended to refactor the <code>is_allowed</code> method to use a Redis Lua script to ensure atomicity.</p>
+</div>
+<!-- Metrics Footer -->
+<div class="p-4 bg-surface border-t border-surface-variant shrink-0 grid grid-cols-3 gap-4">
+<div class="flex flex-col">
+<span class="font-label-mono text-label-mono text-on-surface-variant text-[10px] uppercase tracking-wider mb-1">Latency</span>
+<span class="font-code-block text-code-block text-on-surface font-medium text-error">1250ms</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-mono text-label-mono text-on-surface-variant text-[10px] uppercase tracking-wider mb-1">Tokens (In/Out)</span>
+<span class="font-code-block text-code-block text-on-surface font-medium">42 / 210</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-mono text-label-mono text-on-surface-variant text-[10px] uppercase tracking-wider mb-1">Est. Cost</span>
+<div class="flex items-center gap-2">
+<span class="font-code-block text-code-block text-on-surface font-medium">$0.0028</span>
+<span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-primary-container/20 text-primary border border-primary/30">Winner</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Shared Prompt Input -->
+<div class="bg-surface-container-low p-6 shrink-0 relative z-10">
+<div class="max-w-4xl mx-auto">
+<div class="relative bg-surface rounded-xl border border-outline-variant focus-within:border-primary transition-colors shadow-lg">
+<textarea class="w-full bg-transparent border-none text-on-surface font-body-md text-body-md placeholder-on-surface-variant/50 resize-none p-4 min-h-[100px] focus:ring-0 terminal-scroll" placeholder="Write a prompt to test both models..."></textarea>
+<div class="flex items-center justify-between p-3 border-t border-surface-variant bg-surface-container-lowest rounded-b-xl">
+<div class="flex items-center gap-2 text-on-surface-variant">
+<button class="p-1.5 hover:bg-surface-variant hover:text-on-surface rounded transition-colors" title="System Prompt">
+<span class="material-symbols-outlined text-sm" data-icon="tune">tune</span>
+</button>
+<button class="p-1.5 hover:bg-surface-variant hover:text-on-surface rounded transition-colors" title="Attach Data">
+<span class="material-symbols-outlined text-sm" data-icon="attach_file">attach_file</span>
+</button>
+<div class="h-4 w-px bg-outline-variant mx-1"></div>
+<span class="font-label-mono text-label-mono text-[11px] opacity-70">Tokens: ~42</span>
+</div>
+<button class="bg-primary-container text-on-primary-container hover:bg-primary font-label-mono text-label-mono font-bold uppercase tracking-wider px-6 py-2 rounded-lg flex items-center gap-2 transition-all active:scale-95 shadow-[0_0_12px_rgba(16,185,129,0.2)]">
+<span>Run</span>
+<span class="material-symbols-outlined text-sm" data-icon="play_arrow">play_arrow</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

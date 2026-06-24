@@ -1,0 +1,85 @@
+html {
+  background: #060e20;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+.mission-control-shell {
+  background:
+    linear-gradient(rgb(6 14 32 / 0.74), rgb(6 14 32 / 0.92)),
+    radial-gradient(circle at 10% 10%, rgb(78 222 163 / 0.14), transparent 26rem),
+    radial-gradient(circle at 82% 4%, rgb(123 208 255 / 0.12), transparent 28rem),
+    #060e20;
+  color: #dae2fd;
+  font-family: Geist, Inter, system-ui, sans-serif;
+  min-height: 100dvh;
+  padding: 24px;
+}
+
+.mission-control-header {
+  align-items: end;
+  display: flex;
+  justify-content: space-between;
+  margin: 0 auto 24px;
+  max-width: 1540px;
+}
+
+.mission-control-header p {
+  color: #9aa9b5;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  letter-spacing: 0.12em;
+  margin: 0 0 6px;
+}
+
+.mission-control-header h1 {
+  color: #4edea3;
+  font-size: clamp(2rem, 5vw, 4.5rem);
+  letter-spacing: 0;
+  line-height: 0.95;
+  margin: 0;
+}
+
+.mission-control-header span {
+  border: 1px solid rgb(134 148 138 / 0.42);
+  border-radius: 4px;
+  color: #9aa9b5;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  padding: 0.5rem 0.7rem;
+}
+
+.mission-control-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0 auto;
+  max-width: 1540px;
+}
+
+.mission-control-wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1120px) {
+  .mission-control-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .mission-control-shell {
+    padding: 12px;
+  }
+
+  .mission-control-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+}

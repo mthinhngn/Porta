@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Cost Guard - LLM Spend Analytics</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "on-primary-fixed-variant": "#005236",
+                "tertiary-container": "#909aff",
+                "surface-container-high": "#222a3d",
+                "surface-bright": "#31394d",
+                "background": "#0b1326",
+                "surface-container": "#171f33",
+                "on-primary-fixed": "#002113",
+                "on-tertiary-fixed-variant": "#2f3aa3",
+                "secondary-fixed": "#c4e7ff",
+                "on-surface": "#dae2fd",
+                "on-primary-container": "#00422b",
+                "on-primary": "#003824",
+                "surface-container-highest": "#2d3449",
+                "on-error": "#690005",
+                "surface-dim": "#0b1326",
+                "on-error-container": "#ffdad6",
+                "surface-container-lowest": "#060e20",
+                "on-secondary-fixed-variant": "#004c69",
+                "tertiary": "#bdc2ff",
+                "surface-tint": "#4edea3",
+                "secondary-fixed-dim": "#7bd0ff",
+                "primary": "#4edea3",
+                "on-tertiary-fixed": "#000767",
+                "surface-variant": "#2d3449",
+                "primary-fixed-dim": "#4edea3",
+                "tertiary-fixed-dim": "#bdc2ff",
+                "on-secondary-fixed": "#001e2c",
+                "inverse-surface": "#dae2fd",
+                "primary-container": "#10b981",
+                "outline-variant": "#3c4a42",
+                "secondary": "#7bd0ff",
+                "tertiary-fixed": "#e0e0ff",
+                "primary-fixed": "#6ffbbe",
+                "on-tertiary": "#131e8c",
+                "on-background": "#dae2fd",
+                "inverse-primary": "#006c49",
+                "surface-container-low": "#131b2e",
+                "surface": "#0b1326",
+                "on-secondary": "#00354a",
+                "secondary-container": "#00a6e0",
+                "on-surface-variant": "#bbcabf",
+                "inverse-on-surface": "#283044",
+                "on-secondary-container": "#00374d",
+                "error": "#ffb4ab",
+                "outline": "#86948a",
+                "error-container": "#93000a",
+                "on-tertiary-container": "#1f2994"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.125rem",
+                "lg": "0.25rem",
+                "xl": "0.5rem",
+                "full": "0.75rem"
+        },
+        "spacing": {
+                "md": "16px",
+                "margin-desktop": "32px",
+                "base": "4px",
+                "sm": "8px",
+                "xl": "48px",
+                "xs": "4px",
+                "lg": "24px",
+                "gutter": "16px",
+                "max-width": "1440px",
+                "margin-mobile": "16px"
+        },
+        "fontFamily": {
+                "body-md": [
+                        "Geist"
+                ],
+                "code-block": [
+                        "JetBrains Mono"
+                ],
+                "label-mono": [
+                        "JetBrains Mono"
+                ],
+                "headline-lg-mobile": [
+                        "Geist"
+                ],
+                "headline-xl": [
+                        "Geist"
+                ],
+                "headline-lg": [
+                        "Geist"
+                ],
+                "body-sm": [
+                        "Geist"
+                ]
+        },
+        "fontSize": {
+                "body-md": [
+                        "16px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "code-block": [
+                        "14px",
+                        {
+                                "lineHeight": "22px",
+                                "fontWeight": "400"
+                        }
+                ],
+                "label-mono": [
+                        "13px",
+                        {
+                                "lineHeight": "16px",
+                                "letterSpacing": "0.02em",
+                                "fontWeight": "500"
+                        }
+                ],
+                "headline-lg-mobile": [
+                        "24px",
+                        {
+                                "lineHeight": "32px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "headline-xl": [
+                        "40px",
+                        {
+                                "lineHeight": "48px",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "700"
+                        }
+                ],
+                "headline-lg": [
+                        "30px",
+                        {
+                                "lineHeight": "38px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "600"
+                        }
+                ],
+                "body-sm": [
+                        "14px",
+                        {
+                                "lineHeight": "20px",
+                                "fontWeight": "400"
+                        }
+                ]
+        }
+},
+    },
+  }
+</script>
+<style>
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        .gauge-arc {
+            stroke-dasharray: 283; /* 2 * pi * r (45) */
+            stroke-dashoffset: 283;
+            animation: fillGauge 1.5s ease-out forwards;
+        }
+
+        @keyframes fillGauge {
+            to {
+                stroke-dashoffset: 70; /* ~75% filled */
+            }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md h-screen overflow-hidden flex selection:bg-primary-container selection:text-on-primary-container">
+<!-- STITCH_THREEJS_START:ANIMATION_25 class="fixed inset-0 w-full h-full pointer-events-none opacity-20 z-0" -->
+<div class="fixed inset-0 w-full h-full pointer-events-none opacity-20 z-0" style="display:block;">
+<script src="https://ajax.googleapis.com/ajax/libs/threejs/r125/three.min.js"></script>
+<div id="threejs-container-ANIMATION_25" style="width:100%;height:100%"></div>
+<script>
+(function() {
+  const container = document.getElementById('threejs-container-ANIMATION_25');
+  const devicePixelRatio = window.devicePixelRatio || 1;
+  
+const width = container.clientWidth || window.innerWidth;
+const height = container.clientHeight || window.innerHeight;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+camera.position.z = 50;
+
+const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+renderer.setSize(width, height);
+renderer.setPixelRatio(window.devicePixelRatio);
+container.appendChild(renderer.domElement);
+
+// Particles (Data Nodes)
+const particlesCount = 150;
+const positions = new Float32Array(particlesCount * 3);
+const particleGeometry = new THREE.BufferGeometry();
+
+for (let i = 0; i < particlesCount; i++) {
+    positions[i * 3] = (Math.random() - 0.5) * 100;
+    positions[i * 3 + 1] = (Math.random() - 0.5) * 100;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 100;
+}
+
+particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+const particleMaterial = new THREE.PointsMaterial({
+    color: 0x10b981, // Primary Emerald
+    size: 0.5,
+    transparent: true,
+    opacity: 0.6,
+    blending: THREE.AdditiveBlending
+});
+
+const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+scene.add(particleSystem);
+
+// Interconnecting Lines (The Network)
+const linesMaterial = new THREE.LineBasicMaterial({ 
+    color: 0x10b981, 
+    transparent: true, 
+    opacity: 0.1,
+    blending: THREE.AdditiveBlending
+});
+
+const linesGeometry = new THREE.BufferGeometry();
+const linePositions = new Float32Array(particlesCount * particlesCount * 6);
+linesGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+const lines = new THREE.LineSegments(linesGeometry, linesMaterial);
+scene.add(lines);
+
+let mouseX = 0;
+let mouseY = 0;
+
+window.addEventListener('mousemove', (event) => {
+    mouseX = (event.clientX / window.innerWidth - 0.5) * 20;
+    mouseY = (event.clientY / window.innerHeight - 0.5) * 20;
+});
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    particleSystem.rotation.y += 0.001;
+    particleSystem.rotation.x += 0.0005;
+
+    // Subtle drift towards mouse
+    camera.position.x += (mouseX - camera.position.x) * 0.05;
+    camera.position.y += (-mouseY - camera.position.y) * 0.05;
+    camera.lookAt(scene.position);
+
+    // Update lines (very simple proximity network)
+    let lineIdx = 0;
+    const pos = particleGeometry.attributes.position.array;
+    for (let i = 0; i < particlesCount; i++) {
+        for (let j = i + 1; j < 20; j++) { // Only link a subset for performance
+            const dx = pos[i*3] - pos[j*3];
+            const dy = pos[i*3+1] - pos[j*3+1];
+            const dz = pos[i*3+2] - pos[j*3+2];
+            const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+            
+            if (dist < 30) {
+                linePositions[lineIdx++] = pos[i*3];
+                linePositions[lineIdx++] = pos[i*3+1];
+                linePositions[lineIdx++] = pos[i*3+2];
+                linePositions[lineIdx++] = pos[j*3];
+                linePositions[lineIdx++] = pos[j*3+1];
+                linePositions[lineIdx++] = pos[j*3+2];
+            }
+        }
+    }
+    linesGeometry.attributes.position.needsUpdate = true;
+
+    renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+    const w = container.clientWidth || window.innerWidth;
+    const h = container.clientHeight || window.innerHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+});
+
+animate();
+
+})();
+</script>
+</div>
+<!-- STITCH_THREEJS_END:ANIMATION_25 -->
+<!-- SideNavBar -->
+<nav class="bg-surface-container-low border-r border-outline-variant flex flex-col h-screen w-64 fixed left-0 top-0 z-20 hidden md:flex">
+<div class="p-lg flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">security</span>
+<div class="flex flex-col">
+<span class="font-headline-lg text-headline-lg text-primary tracking-tight">LLM Gateway</span>
+<span class="font-label-mono text-label-mono text-on-surface-variant">v1.0.4-stable</span>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto py-sm px-sm flex flex-col gap-xs">
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm rounded-DEFAULT hover:bg-surface-variant hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-body-sm text-body-sm">Dashboard</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm rounded-DEFAULT hover:bg-surface-variant hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">extension</span>
+<span class="font-body-sm text-body-sm">Models</span>
+</a>
+<a class="text-primary bg-primary-container/20 font-bold border-l-2 border-primary flex items-center gap-md px-md py-sm rounded-r-DEFAULT" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">security</span>
+<span class="font-body-sm text-body-sm">Guardrails</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm rounded-DEFAULT hover:bg-surface-variant hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">list_alt</span>
+<span class="font-body-sm text-body-sm">Logs</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm rounded-DEFAULT hover:bg-surface-variant hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">insights</span>
+<span class="font-body-sm text-body-sm">Pulse</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm rounded-DEFAULT hover:bg-surface-variant hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-body-sm text-body-sm">Playground</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm rounded-DEFAULT hover:bg-surface-variant hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-body-sm text-body-sm">Analytics</span>
+</a>
+</div>
+<div class="p-sm mt-auto border-t border-outline-variant flex flex-col gap-xs">
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm rounded-DEFAULT hover:bg-surface-variant hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-sm text-body-sm">Settings</span>
+</a>
+<a class="text-on-surface-variant flex items-center gap-md px-md py-sm rounded-DEFAULT hover:bg-surface-variant hover:text-on-surface transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="font-body-sm text-body-sm">Support</span>
+</a>
+</div>
+</nav>
+<!-- TopAppBar -->
+<header class="bg-surface fixed top-0 right-0 w-full md:w-[calc(100%-16rem)] h-16 border-b border-outline-variant flex items-center justify-between px-margin-mobile md:px-margin-desktop z-10">
+<div class="flex items-center gap-md flex-1">
+<button class="md:hidden text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<span class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary tracking-tight">Cost Guard</span>
+<div class="hidden md:flex items-center bg-surface-container border border-outline-variant rounded-DEFAULT px-md py-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all ml-lg">
+<span class="material-symbols-outlined text-on-surface-variant mr-sm">search</span>
+<input class="bg-transparent border-none text-on-surface font-body-sm focus:outline-none w-64 placeholder:text-on-surface-variant" placeholder="Search costs..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-md md:gap-lg">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">light_mode</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+<button class="bg-primary text-on-primary font-body-sm px-lg py-sm rounded-DEFAULT hover:bg-primary/90 transition-colors font-bold uppercase tracking-wider hidden md:block">
+                Deploy
+            </button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="mt-16 md:ml-64 w-full h-[calc(100vh-4rem)] overflow-y-auto p-margin-mobile md:p-margin-desktop bg-background relative z-10">
+<div class="max-w-max-width mx-auto flex flex-col gap-lg">
+<!-- Hero / Key Metrics Bento -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-md">
+<!-- Primary Metric Card - Projected Spend -->
+<div class="lg:col-span-1 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col relative overflow-hidden group hover:border-outline transition-colors shadow-sm">
+<div class="absolute -right-10 -top-10 w-48 h-48 bg-error/10 rounded-full blur-3xl opacity-50 group-hover:opacity-70 transition-opacity"></div>
+<div class="flex justify-between items-start mb-md relative z-10">
+<h2 class="font-body-md text-on-surface-variant flex items-center gap-sm">
+<span class="material-symbols-outlined text-error">warning</span>
+                            Projected Month End Spend
+                        </h2>
+<span class="bg-surface-variant text-on-surface font-label-mono px-sm py-xs rounded-sm border border-outline-variant">Nov 2023</span>
+</div>
+<div class="flex-1 flex flex-col items-center justify-center relative z-10 py-md">
+<!-- Custom SVG Gauge -->
+<div class="relative w-48 h-48 flex items-center justify-center">
+<svg class="w-full h-full transform -rotate-90" viewbox="0 0 100 100">
+<!-- Background circle -->
+<circle class="text-surface-variant" cx="50" cy="50" fill="none" r="45" stroke="currentColor" stroke-width="8"></circle>
+<!-- Progress arc -->
+<circle class="text-error gauge-arc drop-shadow-[0_0_8px_rgba(186,26,26,0.3)]" cx="50" cy="50" fill="none" r="45" stroke="currentColor" stroke-linecap="round" stroke-width="8"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="font-headline-xl text-headline-xl text-on-surface">$14.2k</span>
+<span class="font-label-mono text-label-mono text-error">115% of Budget</span>
+</div>
+</div>
+</div>
+<div class="mt-auto relative z-10 flex justify-between items-end border-t border-outline-variant pt-md">
+<div>
+<p class="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider mb-xs">Hard Budget</p>
+<p class="font-body-md text-on-surface">$12,000</p>
+</div>
+<div class="text-right">
+<p class="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider mb-xs">Est. Overage</p>
+<p class="font-body-md text-error">+$2,200</p>
+</div>
+</div>
+</div>
+<!-- Spend Over Time Chart -->
+<div class="lg:col-span-2 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg flex flex-col hover:border-outline transition-colors shadow-sm">
+<div class="flex justify-between items-center mb-md">
+<h2 class="font-body-md text-on-surface-variant flex items-center gap-sm">
+<span class="material-symbols-outlined text-secondary">show_chart</span>
+                            Spend Trajectory
+                        </h2>
+<div class="flex gap-sm">
+<button class="bg-surface-variant text-on-surface font-label-mono px-md py-sm rounded-DEFAULT border border-outline-variant hover:bg-surface-container-high transition-colors text-xs">7D</button>
+<button class="bg-secondary/10 text-secondary font-label-mono px-md py-sm rounded-DEFAULT border border-secondary text-xs">30D</button>
+</div>
+</div>
+<div class="flex-1 relative w-full h-full min-h-[200px]">
+<canvas id="spendChart"></canvas>
+</div>
+</div>
+</div>
+<!-- Optimization Suggestions Table -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl flex flex-col hover:border-outline transition-colors overflow-hidden shadow-sm">
+<div class="p-lg border-b border-outline-variant flex justify-between items-center bg-surface-container/50">
+<h2 class="font-body-md text-on-surface-variant flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary">lightbulb</span>
+                        Optimization Suggestions
+                    </h2>
+<span class="font-label-mono text-label-mono bg-primary-container text-on-primary-container px-sm py-xs rounded-sm border border-primary/30">Potential Savings: ~$850/mo</span>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-lowest border-b border-outline-variant font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider">
+<th class="p-md font-medium">Recommendation</th>
+<th class="p-md font-medium">Impact</th>
+<th class="p-md font-medium">Est. Savings</th>
+<th class="p-md font-medium text-right">Action</th>
+</tr>
+</thead>
+<tbody class="font-code-block text-code-block text-on-surface divide-y divide-outline-variant">
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="p-md flex items-center gap-md">
+<span class="material-symbols-outlined text-secondary">swap_horiz</span>
+<div>
+<p class="text-on-surface">Switch 'Summarize-v2' to GPT-3.5-Turbo</p>
+<p class="text-on-surface-variant text-xs mt-xs">Current model is over-provisioned for task complexity.</p>
+</div>
+</td>
+<td class="p-md">
+<span class="inline-flex items-center bg-error-container text-on-error-container px-sm py-xs rounded-sm text-xs border border-error/20">High Impact</span>
+</td>
+<td class="p-md text-primary font-medium">~$450/mo</td>
+<td class="p-md text-right">
+<button class="bg-transparent border border-outline-variant text-on-surface hover:border-primary hover:text-primary px-md py-sm rounded-DEFAULT text-xs transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100">Apply Rule</button>
+</td>
+</tr>
+<tr class="hover:bg-surface-container transition-colors group border-l-2 border-transparent hover:border-primary">
+<td class="p-md flex items-center gap-md">
+<span class="material-symbols-outlined text-tertiary">content_cut</span>
+<div>
+<p class="text-on-surface">Reduce Prompt History Tokens</p>
+<p class="text-on-surface-variant text-xs mt-xs">Trim context window from 8k to 4k for 'ChatBot-Prod'.</p>
+</div>
+</td>
+<td class="p-md">
+<span class="inline-flex items-center bg-secondary-container text-on-secondary-container px-sm py-xs rounded-sm text-xs border border-secondary/20">Medium Impact</span>
+</td>
+<td class="p-md text-primary font-medium">~$280/mo</td>
+<td class="p-md text-right">
+<button class="bg-transparent border border-outline-variant text-on-surface hover:border-primary hover:text-primary px-md py-sm rounded-DEFAULT text-xs transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100">Review</button>
+</td>
+</tr>
+<tr class="hover:bg-surface-container transition-colors group">
+<td class="p-md flex items-center gap-md">
+<span class="material-symbols-outlined text-primary">schedule</span>
+<div>
+<p class="text-on-surface">Implement Semantic Caching</p>
+<p class="text-on-surface-variant text-xs mt-xs">High duplicate request rate detected on 'FAQ-Endpoint'.</p>
+</div>
+</td>
+<td class="p-md">
+<span class="inline-flex items-center bg-surface-variant text-on-surface px-sm py-xs rounded-sm text-xs border border-outline-variant">Low Impact</span>
+</td>
+<td class="p-md text-primary font-medium">~$120/mo</td>
+<td class="p-md text-right">
+<button class="bg-transparent border border-outline-variant text-on-surface hover:border-primary hover:text-primary px-md py-sm rounded-DEFAULT text-xs transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100">Configure</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Chart.js implementation for Spend Trajectory
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('spendChart').getContext('2d');
+            
+            // Light theme colors from config
+            const colors = {
+                background: '#0b1326',
+                grid: '#3c4a42', // outline-variant
+                text: '#bbcabf', // on-surface-variant
+                primary: '#4edea3',
+                secondary: '#7bd0ff',
+                error: '#ffb4ab'
+            };
+
+            // Gradient for the area under the line
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+            gradient.addColorStop(0, 'rgba(123, 208, 255, 0.2)'); // secondary with opacity
+            gradient.addColorStop(1, 'rgba(123, 208, 255, 0)');
+
+            const labels = Array.from({length: 30}, (_, i) => `Nov ${i+1}`);
+            // Simulate daily spend data trending upwards
+            let baseSpend = 300;
+            const spendData = labels.map((_, i) => {
+                baseSpend += Math.random() * 50 - 10;
+                return baseSpend.toFixed(2);
+            });
+            
+            // Simulate budget line
+            const budgetData = Array(30).fill(400); // Daily budget line
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Actual/Projected Spend',
+                            data: spendData,
+                            borderColor: colors.secondary,
+                            backgroundColor: gradient,
+                            borderWidth: 2,
+                            pointBackgroundColor: colors.background,
+                            pointBorderColor: colors.secondary,
+                            pointRadius: 0, // Hide points for cleaner look
+                            pointHoverRadius: 6,
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Daily Budget',
+                            data: budgetData,
+                            borderColor: colors.error,
+                            borderWidth: 1,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: colors.background,
+                            titleColor: colors.text,
+                            bodyColor: '#dae2fd',
+                            borderColor: colors.grid,
+                            borderWidth: 1,
+                            padding: 12,
+                            displayColors: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return `$${context.parsed.y}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false,
+                                drawBorder: false
+                            },
+                            ticks: {
+                                color: colors.text,
+                                font: {
+                                    family: "'JetBrains Mono', monospace",
+                                    size: 11
+                                },
+                                maxTicksLimit: 7
+                            }
+                        },
+                        y: {
+                            grid: {
+                                color: colors.grid,
+                                drawBorder: false,
+                                borderDash: [2, 4]
+                            },
+                            ticks: {
+                                color: colors.text,
+                                font: {
+                                    family: "'JetBrains Mono', monospace",
+                                    size: 11
+                                },
+                                callback: function(value) {
+                                    return '$' + value;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+</body></html>

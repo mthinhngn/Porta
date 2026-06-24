@@ -4,6 +4,7 @@
 .envrc
 .direnv/
 .venv/
+node_modules/
 venv/
 vnev/
 ENV/
@@ -32,6 +33,7 @@ site/
 .uv-cache/
 .uv-cache-*/
 .cache/
+*.tsbuildinfo
 *.sqlite
 *.sqlite3
 *.sqlite3.bak-*
