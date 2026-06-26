@@ -1,0 +1,158 @@
+{
+  "benchmark_version": "phase4-local-v1",
+  "cases": [
+    {
+      "case_id": "code-debug",
+      "delta": {
+        "cost_usd": "-0.0000074000",
+        "latency_ms": -440,
+        "score": "-0.0500000000"
+      },
+      "prompt_hash": "15c6113c0fce8f1b",
+      "results": {
+        "baseline": {
+          "cost_usd": "0.0000074000",
+          "latency_ms": 700,
+          "output_hash": "2989ec9b4f24fcbe",
+          "passed": true,
+          "provider": "openai",
+          "score": "0.9300000000"
+        },
+        "candidate_auto": {
+          "cost_usd": "0.0000000000",
+          "latency_ms": 260,
+          "output_hash": "ddd5de9ce12cdf34",
+          "passed": true,
+          "provider": "qwen",
+          "score": "0.8800000000"
+        }
+      },
+      "task": "coding"
+    },
+    {
+      "case_id": "friendly-copy",
+      "delta": {
+        "cost_usd": "-0.0000052000",
+        "latency_ms": -415,
+        "score": "-0.0600000000"
+      },
+      "prompt_hash": "e44163799c6ab555",
+      "results": {
+        "baseline": {
+          "cost_usd": "0.0000052000",
+          "latency_ms": 590,
+          "output_hash": "1fe25cf4cd12b24b",
+          "passed": true,
+          "provider": "openai",
+          "score": "0.9000000000"
+        },
+        "candidate_auto": {
+          "cost_usd": "0.0000000000",
+          "latency_ms": 175,
+          "output_hash": "b46674aec4fab4a4",
+          "passed": true,
+          "provider": "llama",
+          "score": "0.8400000000"
+        }
+      },
+      "task": "general"
+    },
+    {
+      "case_id": "general-summary",
+      "delta": {
+        "cost_usd": "-0.0000060000",
+        "latency_ms": -440,
+        "score": "-0.0600000000"
+      },
+      "prompt_hash": "930581d17cfac5da",
+      "results": {
+        "baseline": {
+          "cost_usd": "0.0000060000",
+          "latency_ms": 620,
+          "output_hash": "e37f463e0d487b0d",
+          "passed": true,
+          "provider": "openai",
+          "score": "0.9200000000"
+        },
+        "candidate_auto": {
+          "cost_usd": "0.0000000000",
+          "latency_ms": 180,
+          "output_hash": "5a546fb867e3dcd1",
+          "passed": true,
+          "provider": "llama",
+          "score": "0.8600000000"
+        }
+      },
+      "task": "general"
+    },
+    {
+      "case_id": "sql-routing",
+      "delta": {
+        "cost_usd": "-0.0000068000",
+        "latency_ms": -430,
+        "score": "-0.0400000000"
+      },
+      "prompt_hash": "120068df7833eaab",
+      "results": {
+        "baseline": {
+          "cost_usd": "0.0000068000",
+          "latency_ms": 680,
+          "output_hash": "4532e3cbfb660999",
+          "passed": true,
+          "provider": "openai",
+          "score": "0.9100000000"
+        },
+        "candidate_auto": {
+          "cost_usd": "0.0000000000",
+          "latency_ms": 250,
+          "output_hash": "8ba4f2bf8fc66146",
+          "passed": true,
+          "provider": "qwen",
+          "score": "0.8700000000"
+        }
+      },
+      "task": "coding"
+    }
+  ],
+  "controls": {
+    "max_requests": 20,
+    "max_spend_usd": "0.0000000000",
+    "mode": "local",
+    "paid_live_enabled": false,
+    "request_count": 8
+  },
+  "policies": {
+    "baseline": {
+      "description": "Current configured routing order: openai first, then task local.",
+      "name": "baseline"
+    },
+    "candidate_auto": {
+      "description": "Local-first auto policy when fixture quality clears the floor.",
+      "name": "candidate_auto"
+    }
+  },
+  "report_id": "12bebd8fe95c5ec5",
+  "schema_version": "phase4-benchmark-report-v1",
+  "summary": {
+    "baseline": {
+      "case_count": 4,
+      "mean_latency_ms": 648,
+      "pass_count": 4,
+      "pass_rate": "1.0000000000",
+      "total_cost_usd": "0.0000254000"
+    },
+    "candidate_auto": {
+      "case_count": 4,
+      "mean_latency_ms": 216,
+      "pass_count": 4,
+      "pass_rate": "1.0000000000",
+      "total_cost_usd": "0.0000000000"
+    },
+    "delta": {
+      "mean_latency_ms": -432,
+      "pass_rate": "0.0000000000",
+      "total_cost_usd": "-0.0000254000"
+    }
+  },
+  "task_routing_version": "phase2-local-v1"
+}
