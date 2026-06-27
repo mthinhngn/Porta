@@ -361,6 +361,53 @@ def test_cache_namespace_changes_when_upstream_model_changes(tmp_path: Path) -> 
     assert provider.calls == 2
 
 
+def test_cache_key_separates_standard_and_auto_tiers() -> None:
+    redis_client = StubCacheRedisClient()
+    cache = RedisResponseCache(
+        redis_client,
+        policy=CachePolicy(
+            ttl_seconds=60,
+            guardrail_version="test-v1",
+            encryption_key=base64.urlsafe_b64encode(b"k" * 32).decode(),
+            lock_ttl_seconds=60,
+            wait_timeout_seconds=1,
+        ),
+    )
+    actor_id = UUID("00000000-0000-0000-0000-000000000201")
+    standard_request = GenerateRequest(
+        model="gateway-default",
+        input="Routing-sensitive hello",
+        tier="standard",
+    )
+    auto_request = GenerateRequest(
+        model="gateway-default",
+        input="Routing-sensitive hello",
+        tier="auto",
+    )
+
+    async def exercise() -> None:
+        standard = await cache.get_or_reserve(
+            actor_id=actor_id,
+            resolved_model=standard_request.model,
+            request=standard_request,
+            routing_namespace="phase4-routing",
+            allowed_providers=None,
+        )
+        auto = await cache.get_or_reserve(
+            actor_id=actor_id,
+            resolved_model=auto_request.model,
+            request=auto_request,
+            routing_namespace="phase4-routing",
+            allowed_providers=None,
+        )
+
+        assert standard.reservation is not None
+        assert auto.reservation is not None
+        assert standard.reservation.key != auto.reservation.key
+
+    asyncio.run(exercise())
+
+
 def test_expired_reservation_cannot_publish_over_new_owner() -> None:
     redis_client = StubCacheRedisClient()
     cache = RedisResponseCache(

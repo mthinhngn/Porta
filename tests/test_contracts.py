@@ -73,6 +73,7 @@ def test_generate_request_accepts_r1_shape() -> None:
     assert request.model_dump() == {
         "model": "gateway-default",
         "input": "hello",
+        "tier": "standard",
         "temperature": 0.2,
         "top_p": None,
         "max_output_tokens": 64,
@@ -87,6 +88,17 @@ def test_generate_request_accepts_minimum_max_output_tokens() -> None:
     )
 
     assert request.max_output_tokens == 16
+
+
+def test_generate_request_accepts_auto_tier() -> None:
+    request = GenerateRequest(model="gateway-default", input="hello", tier="auto")
+
+    assert request.tier == "auto"
+
+
+def test_generate_request_rejects_unknown_tier() -> None:
+    with pytest.raises(ValidationError):
+        GenerateRequest(model="gateway-default", input="hello", tier="premium")
 
 
 def test_generate_request_rejects_max_output_tokens_below_minimum() -> None:

@@ -93,6 +93,16 @@ def test_default_generation_pricing_matches_configured_phase_one_model() -> None
     assert settings.generate_openai_output_cost_per_million == Decimal("1.6000000000")
 
 
+def test_auto_routing_is_disabled_by_default_and_env_gated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert Settings().auto_routing_enabled is False
+
+    monkeypatch.setenv("LLM_GATEWAY_AUTO_ROUTING_ENABLED", "true")
+
+    assert Settings().auto_routing_enabled is True
+
+
 def test_cache_encryption_key_requires_32_base64_encoded_bytes() -> None:
     valid_key = base64.urlsafe_b64encode(b"k" * 32).decode()
 
