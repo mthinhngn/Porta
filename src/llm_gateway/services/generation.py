@@ -112,7 +112,7 @@ class GenerationService:
         timeout_seconds: float,
         provider_order: list[str] | tuple[str, ...] | None = None,
         bootstraps: tuple[RouteBootstrap, ...] | list[RouteBootstrap] | None = None,
-        auto_routing_enabled: bool = True,
+        auto_routing_enabled: bool = False,
     ) -> None:
         self._provider_registry = dict(provider_registry)
         self._ledger = ledger

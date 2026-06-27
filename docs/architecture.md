@@ -153,10 +153,12 @@ flowchart LR
 `GenerateRequest` accepts a gateway model alias, text input, routing tier,
 sampling controls, and an output-token limit. `tier=standard` preserves the
 OpenAI-first deterministic route. `tier=auto` is evidence-gated by Phase 4 local
-benchmark results and uses the approved local provider first for the detected
-task category. The request deliberately has no unauthenticated end-user identity
-field. Phase 2 may derive provider safety identifiers from authenticated actors
-without trusting a caller-supplied identity.
+benchmark results, disabled by default with
+`LLM_GATEWAY_AUTO_ROUTING_ENABLED=false`, and uses the approved local provider
+first for the detected task category only when explicitly enabled. The request
+deliberately has no unauthenticated end-user identity field. Phase 2 may derive
+provider safety identifiers from authenticated actors without trusting a
+caller-supplied identity.
 
 `GenerateResponse` returns:
 
@@ -185,9 +187,10 @@ Provider SDK and persistence types never cross the public HTTP boundary.
    or new accounting. A miss obtains a short-lived per-key reservation.
 5. The service classifies the request as coding or general, then resolves
    eligible routes. `tier=standard` uses `openai -> qwen -> llama` for coding
-   and `openai -> llama -> qwen` for general prompts. `tier=auto` uses
-   `qwen -> llama -> openai` for coding and `llama -> qwen -> openai` for
-   general prompts after Phase 4 evidence acceptance. Actor provider policy is
+   and `openai -> llama -> qwen` for general prompts. `tier=auto` is rejected
+   unless `LLM_GATEWAY_AUTO_ROUTING_ENABLED=true`; once enabled after Phase 4
+   evidence acceptance, it uses `qwen -> llama -> openai` for coding and
+   `llama -> qwen -> openai` for general prompts. Actor provider policy is
    applied after policy ordering in both tiers.
 6. The ledger creates the gateway request and chronological provider attempts.
    Retry and fallback share one absolute deadline.

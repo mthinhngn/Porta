@@ -63,6 +63,7 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=128,
     )
+    auto_routing_enabled: bool = False
     openai_api_key: str | None = Field(default=None, min_length=1)
     openai_base_url: str = Field(
         default="https://api.openai.com/v1",

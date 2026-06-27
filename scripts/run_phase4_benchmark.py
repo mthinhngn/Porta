@@ -12,6 +12,7 @@ from llm_gateway.evaluation.benchmark import (
     PAID_LIVE_ENV_FLAG,
     BenchmarkBudgetExceeded,
     BenchmarkConfig,
+    BenchmarkPassRuleFailed,
     PaidLiveBenchmarkRefused,
     run_benchmark,
 )
@@ -48,6 +49,12 @@ def main() -> int:
         default=Path("reports/phase4-benchmark.json"),
         help="JSON report output path.",
     )
+    parser.add_argument(
+        "--dataset-path",
+        type=Path,
+        default=None,
+        help="Optional Phase 4 v1 dataset path override.",
+    )
     args = parser.parse_args()
 
     config = BenchmarkConfig(
@@ -57,14 +64,19 @@ def main() -> int:
         max_requests=args.max_requests,
         max_spend_usd=args.max_spend_usd,
         report_path=args.report_path,
+        dataset_path=args.dataset_path,
     )
     try:
         report = run_benchmark(config)
     except (BenchmarkBudgetExceeded, PaidLiveBenchmarkRefused) as exc:
         print(f"phase4 benchmark refused: {exc}")
         return 2
+    except BenchmarkPassRuleFailed as exc:
+        print(f"phase4 benchmark failed: {exc}")
+        print(f"saved report: {args.report_path}")
+        return 1
 
-    print(json.dumps(report["summary"], indent=2, sort_keys=True))
+    print(json.dumps(report["pass_rule"], indent=2, sort_keys=True))
     print(f"wrote report: {args.report_path}")
     return 0
 

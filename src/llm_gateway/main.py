@@ -161,6 +161,7 @@ def _build_generation_service(
         timeout_seconds=settings.provider_timeout_seconds,
         provider_order=provider_order,
         bootstraps=bootstraps,
+        auto_routing_enabled=settings.auto_routing_enabled,
     )
 
 

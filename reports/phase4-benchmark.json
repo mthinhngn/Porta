@@ -1,157 +1,830 @@
 {
-  "benchmark_version": "phase4-local-v1",
+  "auto_routing_policy_version": "phase4-local-v1",
+  "benchmark_version": "phase4-service-v1",
   "cases": [
     {
-      "case_id": "code-debug",
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 14,
+        "output_hash": "9cb6e44033a971d6",
+        "provider": "qwen",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
+      },
+      "case_id": "phase4-v1-coding-001",
+      "category": "coding",
       "delta": {
-        "cost_usd": "-0.0000074000",
-        "latency_ms": -440,
-        "score": "0.0100000000"
+        "cost_usd": "-0.0000544000",
+        "latency_ms": -25,
+        "quality_score": "0.0000000000"
       },
-      "prompt_hash": "15c6113c0fce8f1b",
-      "results": {
-        "baseline": {
-          "cost_usd": "0.0000074000",
-          "latency_ms": 700,
-          "output_hash": "2989ec9b4f24fcbe",
-          "passed": true,
-          "provider": "openai",
-          "score": "0.9300000000"
-        },
-        "candidate_auto": {
-          "cost_usd": "0.0000000000",
-          "latency_ms": 260,
-          "output_hash": "ddd5de9ce12cdf34",
-          "passed": true,
-          "provider": "qwen",
-          "score": "0.9400000000"
-        }
-      },
-      "task": "coding"
+      "expected_task": "coding",
+      "prompt_hash": "ed01e9236ff3b8c9",
+      "standard": {
+        "cost_usd": "0.0000544000",
+        "latency_ms": 39,
+        "output_hash": "9cb6e44033a971d6",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
     },
     {
-      "case_id": "friendly-copy",
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 15,
+        "output_hash": "850d37a6634a3f26",
+        "provider": "qwen",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
+      },
+      "case_id": "phase4-v1-coding-002",
+      "category": "coding",
       "delta": {
-        "cost_usd": "-0.0000052000",
-        "latency_ms": -415,
-        "score": "0.0100000000"
+        "cost_usd": "-0.0000532000",
+        "latency_ms": -15,
+        "quality_score": "0.0000000000"
       },
-      "prompt_hash": "e44163799c6ab555",
-      "results": {
-        "baseline": {
-          "cost_usd": "0.0000052000",
-          "latency_ms": 590,
-          "output_hash": "1fe25cf4cd12b24b",
-          "passed": true,
-          "provider": "openai",
-          "score": "0.9000000000"
-        },
-        "candidate_auto": {
-          "cost_usd": "0.0000000000",
-          "latency_ms": 175,
-          "output_hash": "b46674aec4fab4a4",
-          "passed": true,
-          "provider": "llama",
-          "score": "0.9100000000"
-        }
-      },
-      "task": "general"
+      "expected_task": "coding",
+      "prompt_hash": "246e3a4121e3ddec",
+      "standard": {
+        "cost_usd": "0.0000532000",
+        "latency_ms": 30,
+        "output_hash": "850d37a6634a3f26",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
     },
     {
-      "case_id": "general-summary",
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 15,
+        "output_hash": "5958efcc41ef431e",
+        "provider": "llama",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
+      },
+      "case_id": "phase4-v1-constrained-format-001",
+      "category": "constrained_format",
       "delta": {
-        "cost_usd": "-0.0000060000",
-        "latency_ms": -440,
-        "score": "0.0100000000"
+        "cost_usd": "-0.0000088000",
+        "latency_ms": -18,
+        "quality_score": "0.0000000000"
       },
-      "prompt_hash": "930581d17cfac5da",
-      "results": {
-        "baseline": {
-          "cost_usd": "0.0000060000",
-          "latency_ms": 620,
-          "output_hash": "e37f463e0d487b0d",
-          "passed": true,
-          "provider": "openai",
-          "score": "0.9200000000"
-        },
-        "candidate_auto": {
-          "cost_usd": "0.0000000000",
-          "latency_ms": 180,
-          "output_hash": "5a546fb867e3dcd1",
-          "passed": true,
-          "provider": "llama",
-          "score": "0.9300000000"
-        }
-      },
-      "task": "general"
+      "expected_task": "general",
+      "prompt_hash": "6c5cbb861e3a61be",
+      "standard": {
+        "cost_usd": "0.0000088000",
+        "latency_ms": 33,
+        "output_hash": "5958efcc41ef431e",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
     },
     {
-      "case_id": "sql-routing",
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 15,
+        "output_hash": "8a64678635fb4c58",
+        "provider": "llama",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
+      },
+      "case_id": "phase4-v1-constrained-format-002",
+      "category": "constrained_format",
       "delta": {
-        "cost_usd": "-0.0000068000",
-        "latency_ms": -430,
-        "score": "0.0100000000"
+        "cost_usd": "-0.0000248000",
+        "latency_ms": -15,
+        "quality_score": "0.0000000000"
       },
-      "prompt_hash": "120068df7833eaab",
-      "results": {
-        "baseline": {
-          "cost_usd": "0.0000068000",
-          "latency_ms": 680,
-          "output_hash": "4532e3cbfb660999",
-          "passed": true,
-          "provider": "openai",
-          "score": "0.9100000000"
-        },
-        "candidate_auto": {
-          "cost_usd": "0.0000000000",
-          "latency_ms": 250,
-          "output_hash": "8ba4f2bf8fc66146",
-          "passed": true,
-          "provider": "qwen",
-          "score": "0.9200000000"
-        }
+      "expected_task": "general",
+      "prompt_hash": "ca7c9380b15b74c1",
+      "standard": {
+        "cost_usd": "0.0000248000",
+        "latency_ms": 30,
+        "output_hash": "8a64678635fb4c58",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
+    },
+    {
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 15,
+        "output_hash": "673af4e4d36cbd02",
+        "provider": "llama",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
       },
-      "task": "coding"
+      "case_id": "phase4-v1-factual-qa-001",
+      "category": "factual_qa",
+      "delta": {
+        "cost_usd": "-0.0000208000",
+        "latency_ms": -17,
+        "quality_score": "0.0000000000"
+      },
+      "expected_task": "general",
+      "prompt_hash": "50bbebafa2cfdeba",
+      "standard": {
+        "cost_usd": "0.0000208000",
+        "latency_ms": 32,
+        "output_hash": "673af4e4d36cbd02",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
+    },
+    {
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 7,
+        "output_hash": "a4a4b6f5219f3875",
+        "provider": "llama",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
+      },
+      "case_id": "phase4-v1-factual-qa-002",
+      "category": "factual_qa",
+      "delta": {
+        "cost_usd": "-0.0000212000",
+        "latency_ms": -23,
+        "quality_score": "0.0000000000"
+      },
+      "expected_task": "general",
+      "prompt_hash": "1d0b4d4f8299ea88",
+      "standard": {
+        "cost_usd": "0.0000212000",
+        "latency_ms": 30,
+        "output_hash": "a4a4b6f5219f3875",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
+    },
+    {
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 15,
+        "output_hash": "1cf133ca2ea231d7",
+        "provider": "llama",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
+      },
+      "case_id": "phase4-v1-general-001",
+      "category": "general",
+      "delta": {
+        "cost_usd": "-0.0000344000",
+        "latency_ms": -16,
+        "quality_score": "0.0000000000"
+      },
+      "expected_task": "general",
+      "prompt_hash": "d05f5c48cb4baae0",
+      "standard": {
+        "cost_usd": "0.0000344000",
+        "latency_ms": 31,
+        "output_hash": "1cf133ca2ea231d7",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
+    },
+    {
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 7,
+        "output_hash": "dbf71c42bb261402",
+        "provider": "llama",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
+      },
+      "case_id": "phase4-v1-general-002",
+      "category": "general",
+      "delta": {
+        "cost_usd": "-0.0000356000",
+        "latency_ms": -23,
+        "quality_score": "0.0000000000"
+      },
+      "expected_task": "general",
+      "prompt_hash": "e4c012f4bca5a9f5",
+      "standard": {
+        "cost_usd": "0.0000356000",
+        "latency_ms": 30,
+        "output_hash": "dbf71c42bb261402",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
+    },
+    {
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 14,
+        "output_hash": "33755c7fb2099629",
+        "provider": "llama",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
+      },
+      "case_id": "phase4-v1-guardrail-safe-001",
+      "category": "guardrail_safe",
+      "delta": {
+        "cost_usd": "-0.0000296000",
+        "latency_ms": -18,
+        "quality_score": "0.0000000000"
+      },
+      "expected_task": "general",
+      "prompt_hash": "20aedb412bd1cd55",
+      "standard": {
+        "cost_usd": "0.0000296000",
+        "latency_ms": 32,
+        "output_hash": "33755c7fb2099629",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
+    },
+    {
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 7,
+        "output_hash": "6a41ca36cf62ec38",
+        "provider": "llama",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
+      },
+      "case_id": "phase4-v1-guardrail-safe-002",
+      "category": "guardrail_safe",
+      "delta": {
+        "cost_usd": "-0.0000344000",
+        "latency_ms": -29,
+        "quality_score": "0.0000000000"
+      },
+      "expected_task": "general",
+      "prompt_hash": "c55be60437d0d580",
+      "standard": {
+        "cost_usd": "0.0000344000",
+        "latency_ms": 36,
+        "output_hash": "6a41ca36cf62ec38",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
+    },
+    {
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 15,
+        "output_hash": "b36a009f9eb35720",
+        "provider": "llama",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
+      },
+      "case_id": "phase4-v1-summarization-001",
+      "category": "summarization",
+      "delta": {
+        "cost_usd": "-0.0000440000",
+        "latency_ms": -20,
+        "quality_score": "0.0000000000"
+      },
+      "expected_task": "general",
+      "prompt_hash": "876faa5d68ba9648",
+      "standard": {
+        "cost_usd": "0.0000440000",
+        "latency_ms": 35,
+        "output_hash": "b36a009f9eb35720",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
+    },
+    {
+      "auto": {
+        "cost_usd": "0.0000000000",
+        "latency_ms": 8,
+        "output_hash": "28aebe12d609e92c",
+        "provider": "llama",
+        "quality_score": "1.0000000000",
+        "routing_reason": "auto_routing_policy"
+      },
+      "case_id": "phase4-v1-summarization-002",
+      "category": "summarization",
+      "delta": {
+        "cost_usd": "-0.0000408000",
+        "latency_ms": -22,
+        "quality_score": "0.0000000000"
+      },
+      "expected_task": "general",
+      "prompt_hash": "c47e125004ca2716",
+      "standard": {
+        "cost_usd": "0.0000408000",
+        "latency_ms": 30,
+        "output_hash": "28aebe12d609e92c",
+        "provider": "openai",
+        "quality_score": "1.0000000000",
+        "routing_reason": "configured_single_path"
+      }
     }
   ],
   "controls": {
-    "max_requests": 20,
+    "auto_routing_enabled_in_benchmark": true,
+    "compared_tiers": [
+      "tier=standard",
+      "tier=auto"
+    ],
+    "elapsed_ms": 595,
+    "max_requests": 24,
     "max_spend_usd": "0.0000000000",
     "mode": "local",
     "paid_live_enabled": false,
-    "request_count": 8
+    "request_count": 24,
+    "service_path": "GenerationService.generate"
   },
-  "policies": {
-    "baseline": {
-      "description": "Current configured routing order: openai first, then task local.",
-      "name": "baseline"
+  "dataset": {
+    "case_count": 12,
+    "name": "Phase 4 synthetic gateway evaluation v1",
+    "version": "phase4-v1"
+  },
+  "pass_rule": {
+    "better_cost_or_latency": true,
+    "missing_approved_case_ids": [],
+    "no_missing_cases": true,
+    "no_quality_regression": true,
+    "passed": true,
+    "same_or_better_pass_rate": true
+  },
+  "report_id": "ba4272c64b2ebbd4",
+  "schema_version": "phase4-benchmark-report-v2",
+  "scoring": {
+    "auto": {
+      "average_cost": "0",
+      "average_latency_ms": "12.25",
+      "average_quality_score": "1",
+      "cases": 12,
+      "failed_cases": 0,
+      "max_latency_ms": 15,
+      "min_latency_ms": 7,
+      "passed_cases": 12,
+      "total_cost": "0"
     },
-    "candidate_auto": {
-      "description": "Local-first auto policy when fixture quality clears the floor.",
-      "name": "candidate_auto"
+    "baseline": {
+      "average_cost": "0.0000335000",
+      "average_latency_ms": "32.33333333333333333333333333",
+      "average_quality_score": "1",
+      "cases": 12,
+      "failed_cases": 0,
+      "max_latency_ms": 39,
+      "min_latency_ms": 30,
+      "passed_cases": 12,
+      "total_cost": "0.0004020000"
+    },
+    "cases": {
+      "auto": [
+        {
+          "case_id": "phase4-v1-coding-001",
+          "cost": "0",
+          "latency_ms": 14,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        },
+        {
+          "case_id": "phase4-v1-coding-002",
+          "cost": "0",
+          "latency_ms": 15,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        },
+        {
+          "case_id": "phase4-v1-constrained-format-001",
+          "cost": "0",
+          "latency_ms": 15,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "constrained_format",
+              "passed": true,
+              "reason": "JSON object constraints satisfied",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        },
+        {
+          "case_id": "phase4-v1-constrained-format-002",
+          "cost": "0",
+          "latency_ms": 15,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "constrained_format",
+              "passed": true,
+              "reason": "plain text constraints satisfied",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        },
+        {
+          "case_id": "phase4-v1-factual-qa-001",
+          "cost": "0",
+          "latency_ms": 15,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        },
+        {
+          "case_id": "phase4-v1-factual-qa-002",
+          "cost": "0",
+          "latency_ms": 7,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        },
+        {
+          "case_id": "phase4-v1-general-001",
+          "cost": "0",
+          "latency_ms": 15,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        },
+        {
+          "case_id": "phase4-v1-general-002",
+          "cost": "0",
+          "latency_ms": 7,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            },
+            {
+              "name": "constrained_format",
+              "passed": true,
+              "reason": "plain text constraints satisfied",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        },
+        {
+          "case_id": "phase4-v1-guardrail-safe-001",
+          "cost": "0",
+          "latency_ms": 14,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "safety",
+              "passed": true,
+              "reason": "safety expectation satisfied",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        },
+        {
+          "case_id": "phase4-v1-guardrail-safe-002",
+          "cost": "0",
+          "latency_ms": 7,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "safety",
+              "passed": true,
+              "reason": "safety expectation satisfied",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        },
+        {
+          "case_id": "phase4-v1-summarization-001",
+          "cost": "0",
+          "latency_ms": 15,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        },
+        {
+          "case_id": "phase4-v1-summarization-002",
+          "cost": "0",
+          "latency_ms": 8,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=auto"
+        }
+      ],
+      "baseline": [
+        {
+          "case_id": "phase4-v1-coding-001",
+          "cost": "0.0000544000",
+          "latency_ms": 39,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        },
+        {
+          "case_id": "phase4-v1-coding-002",
+          "cost": "0.0000532000",
+          "latency_ms": 30,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        },
+        {
+          "case_id": "phase4-v1-constrained-format-001",
+          "cost": "0.0000088000",
+          "latency_ms": 33,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "constrained_format",
+              "passed": true,
+              "reason": "JSON object constraints satisfied",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        },
+        {
+          "case_id": "phase4-v1-constrained-format-002",
+          "cost": "0.0000248000",
+          "latency_ms": 30,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "constrained_format",
+              "passed": true,
+              "reason": "plain text constraints satisfied",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        },
+        {
+          "case_id": "phase4-v1-factual-qa-001",
+          "cost": "0.0000208000",
+          "latency_ms": 32,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        },
+        {
+          "case_id": "phase4-v1-factual-qa-002",
+          "cost": "0.0000212000",
+          "latency_ms": 30,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        },
+        {
+          "case_id": "phase4-v1-general-001",
+          "cost": "0.0000344000",
+          "latency_ms": 31,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        },
+        {
+          "case_id": "phase4-v1-general-002",
+          "cost": "0.0000356000",
+          "latency_ms": 30,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            },
+            {
+              "name": "constrained_format",
+              "passed": true,
+              "reason": "plain text constraints satisfied",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        },
+        {
+          "case_id": "phase4-v1-guardrail-safe-001",
+          "cost": "0.0000296000",
+          "latency_ms": 32,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "safety",
+              "passed": true,
+              "reason": "safety expectation satisfied",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        },
+        {
+          "case_id": "phase4-v1-guardrail-safe-002",
+          "cost": "0.0000344000",
+          "latency_ms": 36,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "safety",
+              "passed": true,
+              "reason": "safety expectation satisfied",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        },
+        {
+          "case_id": "phase4-v1-summarization-001",
+          "cost": "0.0000440000",
+          "latency_ms": 35,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        },
+        {
+          "case_id": "phase4-v1-summarization-002",
+          "cost": "0.0000408000",
+          "latency_ms": 30,
+          "passed": true,
+          "quality_score": "1",
+          "results": [
+            {
+              "name": "required_concepts",
+              "passed": true,
+              "reason": "all required concepts present",
+              "score": "1"
+            }
+          ],
+          "route": "tier=standard"
+        }
+      ]
+    },
+    "schema_version": "llm-gateway.evaluation.v1",
+    "summary": {
+      "case_regressions": [],
+      "cost_improved": true,
+      "efficiency_improved": true,
+      "latency_improved": true,
+      "missing_case_ids": [],
+      "passed": true,
+      "quality_preserved_or_improved": true
+    },
+    "thresholds": {
+      "max_failed_cases": 0,
+      "minimum_average_quality_score": "1",
+      "minimum_case_quality_score": "1",
+      "require_per_case_quality_preserved": true
     }
   },
-  "report_id": "0c14d573f2ae3c56",
-  "schema_version": "phase4-benchmark-report-v1",
   "summary": {
-    "baseline": {
-      "case_count": 4,
-      "mean_latency_ms": 648,
-      "pass_count": 4,
-      "pass_rate": "1.0000000000",
-      "total_cost_usd": "0.0000254000"
-    },
-    "candidate_auto": {
-      "case_count": 4,
-      "mean_latency_ms": 216,
-      "pass_count": 4,
-      "pass_rate": "1.0000000000",
-      "total_cost_usd": "0.0000000000"
+    "auto": {
+      "average_cost": "0",
+      "average_latency_ms": "12.25",
+      "average_quality_score": "1",
+      "cases": 12,
+      "failed_cases": 0,
+      "max_latency_ms": 15,
+      "min_latency_ms": 7,
+      "passed_cases": 12,
+      "total_cost": "0"
     },
     "delta": {
-      "mean_latency_ms": -432,
+      "average_latency_ms": "-20.0833333333",
       "pass_rate": "0.0000000000",
-      "total_cost_usd": "-0.0000254000"
+      "total_cost_usd": "-0.0004020000"
+    },
+    "standard": {
+      "average_cost": "0.0000335000",
+      "average_latency_ms": "32.33333333333333333333333333",
+      "average_quality_score": "1",
+      "cases": 12,
+      "failed_cases": 0,
+      "max_latency_ms": 39,
+      "min_latency_ms": 30,
+      "passed_cases": 12,
+      "total_cost": "0.0004020000"
     }
   },
   "task_routing_version": "phase2-local-v1"

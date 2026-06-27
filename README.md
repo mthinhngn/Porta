@@ -146,7 +146,8 @@ Request:
 `tier` is optional. `standard` preserves the deterministic OpenAI-first route.
 `auto` uses the Phase 4 evidence-gated policy, which prefers the approved local
 provider for the detected task category only when the benchmark evidence is
-accepted.
+accepted and `LLM_GATEWAY_AUTO_ROUTING_ENABLED=true` is set. The default is
+disabled.
 
 Response:
 
@@ -434,10 +435,12 @@ Phase 4 local benchmark:
 uv run python scripts/run_phase4_benchmark.py --mode local --report-path reports/phase4-benchmark.json
 ```
 
-The local benchmark is deterministic, uses synthetic fixtures, and does not call
-paid providers. Paid live benchmark mode is refused unless both
-`--allow-paid-live` and `LLM_GATEWAY_PHASE4_PAID_LIVE=1` are set, and request
-and spend caps still apply.
+The local benchmark is deterministic, uses the versioned Phase 4 dataset,
+exercises the real service path for `tier=standard` and `tier=auto`, scores
+outputs with the deterministic scorer, and does not call paid providers. Paid
+live benchmark mode is refused unless both `--allow-paid-live` and
+`LLM_GATEWAY_PHASE4_PAID_LIVE=1` are set, and request and spend caps still
+apply.
 
 ## Privacy Model
 
