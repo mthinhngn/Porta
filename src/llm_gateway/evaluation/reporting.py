@@ -44,8 +44,7 @@ def build_evaluation_report(
                 for case in sorted(baseline_cases, key=lambda item: item.case_id)
             ],
             "auto": [
-                _case_to_dict(case)
-                for case in sorted(auto_cases, key=lambda item: item.case_id)
+                _case_to_dict(case) for case in sorted(auto_cases, key=lambda item: item.case_id)
             ],
         },
     }

@@ -136,11 +136,17 @@ Request:
 {
   "model": "gateway-default",
   "input": "Respond with exactly: hello",
+  "tier": "standard",
   "temperature": 0.7,
   "top_p": 1,
   "max_output_tokens": 64
 }
 ```
+
+`tier` is optional. `standard` preserves the deterministic OpenAI-first route.
+`auto` uses the Phase 4 evidence-gated policy, which prefers the approved local
+provider for the detected task category only when the benchmark evidence is
+accepted.
 
 Response:
 
@@ -421,6 +427,17 @@ uv run pytest tests/test_live_smoke.py -q
 
 The live smoke can incur provider cost and requires a real
 `LLM_GATEWAY_OPENAI_API_KEY`.
+
+Phase 4 local benchmark:
+
+```powershell
+uv run python scripts/run_phase4_benchmark.py --mode local --report-path reports/phase4-benchmark.json
+```
+
+The local benchmark is deterministic, uses synthetic fixtures, and does not call
+paid providers. Paid live benchmark mode is refused unless both
+`--allow-paid-live` and `LLM_GATEWAY_PHASE4_PAID_LIVE=1` are set, and request
+and spend caps still apply.
 
 ## Privacy Model
 

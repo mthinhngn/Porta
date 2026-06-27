@@ -169,9 +169,10 @@ def score_constrained_format(actual: str, expectation: FormatExpectation) -> Sco
             reason="response exceeds maximum character limit",
         )
 
-    if expectation.regex_pattern is not None and re.fullmatch(
-        expectation.regex_pattern, actual.strip(), flags=re.DOTALL
-    ) is None:
+    if (
+        expectation.regex_pattern is not None
+        and re.fullmatch(expectation.regex_pattern, actual.strip(), flags=re.DOTALL) is None
+    ):
         return ScoreResult(
             name="constrained_format",
             passed=False,
@@ -374,10 +375,7 @@ def compare_auto_to_baseline(
         and auto.failed_cases <= thresholds.max_failed_cases
         and auto.average_quality_score >= thresholds.minimum_average_quality_score
         and auto.average_quality_score >= baseline.average_quality_score
-        and (
-            not thresholds.require_per_case_quality_preserved
-            or not case_regressions
-        )
+        and (not thresholds.require_per_case_quality_preserved or not case_regressions)
         and all(case.quality_score >= thresholds.minimum_case_quality_score for case in auto_cases)
     )
     cost_improved = auto.total_cost < baseline.total_cost

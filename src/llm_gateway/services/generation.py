@@ -35,6 +35,7 @@ from llm_gateway.providers import (
 
 P = ParamSpec("P")
 T = TypeVar("T")
+AUTO_ROUTING_POLICY_VERSION = "phase4-local-v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,12 +112,14 @@ class GenerationService:
         timeout_seconds: float,
         provider_order: list[str] | tuple[str, ...] | None = None,
         bootstraps: tuple[RouteBootstrap, ...] | list[RouteBootstrap] | None = None,
+        auto_routing_enabled: bool = True,
     ) -> None:
         self._provider_registry = dict(provider_registry)
         self._ledger = ledger
         self._timeout_seconds = timeout_seconds
         self._provider_order = tuple(provider_order or provider_registry.keys())
         self._bootstraps = tuple(bootstraps or ())
+        self._auto_routing_enabled = auto_routing_enabled
 
     def bootstrap(self) -> None:
         if not self._bootstraps:
@@ -162,6 +165,8 @@ class GenerationService:
                 for item in self._bootstraps
             ],
             "task_routing_version": TASK_ROUTING_VERSION,
+            "auto_routing_policy_version": AUTO_ROUTING_POLICY_VERSION,
+            "auto_routing_enabled": self._auto_routing_enabled,
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
@@ -351,6 +356,7 @@ class GenerationService:
                         latency_ms=round((perf_counter() - started_at) * 1000),
                         attempt_count=attempt_count,
                         routing_reason=self._routing_reason(
+                            routing_tier=request.tier,
                             primary_provider=primary_route.provider_name,
                             winning_provider=outcome.route.provider_name,
                             attempt_count=attempt_count,
@@ -401,6 +407,17 @@ class GenerationService:
                 "qwen",
             )
         )
+        if request.tier == "auto":
+            if not self._auto_routing_enabled:
+                raise ApiError(
+                    message="Auto routing is unavailable.",
+                    type="invalid_request_error",
+                    status_code=400,
+                    code="auto_routing_unavailable",
+                )
+            return tuple(
+                provider for provider in (*local_order, "openai") if provider in configured
+            )
         return tuple(provider for provider in ("openai", *local_order) if provider in configured)
 
     def _response_from_result(
@@ -585,10 +602,13 @@ class GenerationService:
     @staticmethod
     def _routing_reason(
         *,
+        routing_tier: str,
         primary_provider: str,
         winning_provider: str,
         attempt_count: int,
     ) -> str:
+        if routing_tier == "auto" and attempt_count == 1:
+            return "auto_routing_policy"
         if winning_provider != primary_provider:
             return "fallback_after_retry"
         if attempt_count > 1:

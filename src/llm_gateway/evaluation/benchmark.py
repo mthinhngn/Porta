@@ -150,8 +150,7 @@ def run_benchmark(
     _preflight_controls(resolved_config, fixture_tuple)
 
     case_results = [
-        _case_report(case)
-        for case in sorted(fixture_tuple, key=lambda item: item.case_id)
+        _case_report(case) for case in sorted(fixture_tuple, key=lambda item: item.case_id)
     ]
     report = _report_from_cases(resolved_config, case_results)
 
@@ -192,8 +191,7 @@ def _preflight_controls(config: BenchmarkConfig, fixtures: tuple[BenchmarkCase, 
     if config.mode == "paid-live":
         if not config.allow_paid_live or config.paid_live_env_value != "1":
             raise PaidLiveBenchmarkRefused(
-                "paid live benchmark requires allow_paid_live=True and "
-                f"{PAID_LIVE_ENV_FLAG}=1"
+                f"paid live benchmark requires allow_paid_live=True and {PAID_LIVE_ENV_FLAG}=1"
             )
         projected_spend = _projected_paid_spend(fixtures)
         if projected_spend > config.max_spend_usd:
@@ -206,8 +204,7 @@ def _preflight_controls(config: BenchmarkConfig, fixtures: tuple[BenchmarkCase, 
 def _projected_paid_spend(fixtures: tuple[BenchmarkCase, ...]) -> Decimal:
     return sum(
         (
-            case.provider_cost_usd["openai"]
-            + case.provider_cost_usd[_candidate_provider(case)]
+            case.provider_cost_usd["openai"] + case.provider_cost_usd[_candidate_provider(case)]
             for case in fixtures
         ),
         Decimal("0"),
@@ -228,9 +225,7 @@ def _case_report(case: BenchmarkCase) -> dict[str, object]:
         "delta": {
             "score": _money(_decimal(candidate["score"]) - _decimal(baseline["score"])),
             "latency_ms": _int(candidate["latency_ms"]) - _int(baseline["latency_ms"]),
-            "cost_usd": _money(
-                _decimal(candidate["cost_usd"]) - _decimal(baseline["cost_usd"])
-            ),
+            "cost_usd": _money(_decimal(candidate["cost_usd"]) - _decimal(baseline["cost_usd"])),
         },
     }
 
@@ -295,8 +290,7 @@ def _report_from_cases(
                     _decimal(candidate["pass_rate"]) - _decimal(baseline["pass_rate"])
                 ),
                 "total_cost_usd": _money(
-                    _decimal(candidate["total_cost_usd"])
-                    - _decimal(baseline["total_cost_usd"])
+                    _decimal(candidate["total_cost_usd"]) - _decimal(baseline["total_cost_usd"])
                 ),
                 "mean_latency_ms": _int(candidate["mean_latency_ms"])
                 - _int(baseline["mean_latency_ms"]),

@@ -60,7 +60,7 @@ def test_constrained_format_checks_json_shape_and_required_keys() -> None:
     )
     assert extra.passed is False
     assert "unexpected JSON keys" in extra.reason
-    assert score_constrained_format("prefix {\"answer\":\"ok\"}", expectation).passed is False
+    assert score_constrained_format('prefix {"answer":"ok"}', expectation).passed is False
 
 
 def test_safety_expectation_is_binary_and_does_not_call_judges() -> None:

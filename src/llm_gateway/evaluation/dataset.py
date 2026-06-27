@@ -122,9 +122,7 @@ def validate_phase4_v1_dataset(raw: Mapping[str, object]) -> EvaluationDataset:
 def _parse_case(raw: Mapping[str, object], location: str) -> EvaluationCase:
     case_id = _required_str(raw, "id", location)
     if not case_id.startswith(f"{PHASE4_DATASET_VERSION}-"):
-        raise DatasetValidationError(
-            f"{location}.id must start with {PHASE4_DATASET_VERSION!r}"
-        )
+        raise DatasetValidationError(f"{location}.id must start with {PHASE4_DATASET_VERSION!r}")
 
     raw_category = _required_str(raw, "category", location)
     if raw_category not in _REQUIRED_CATEGORY_SET:

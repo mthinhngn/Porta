@@ -6,7 +6,7 @@
       "delta": {
         "cost_usd": "-0.0000074000",
         "latency_ms": -440,
-        "score": "-0.0500000000"
+        "score": "0.0100000000"
       },
       "prompt_hash": "15c6113c0fce8f1b",
       "results": {
@@ -24,7 +24,7 @@
           "output_hash": "ddd5de9ce12cdf34",
           "passed": true,
           "provider": "qwen",
-          "score": "0.8800000000"
+          "score": "0.9400000000"
         }
       },
       "task": "coding"
@@ -34,7 +34,7 @@
       "delta": {
         "cost_usd": "-0.0000052000",
         "latency_ms": -415,
-        "score": "-0.0600000000"
+        "score": "0.0100000000"
       },
       "prompt_hash": "e44163799c6ab555",
       "results": {
@@ -52,7 +52,7 @@
           "output_hash": "b46674aec4fab4a4",
           "passed": true,
           "provider": "llama",
-          "score": "0.8400000000"
+          "score": "0.9100000000"
         }
       },
       "task": "general"
@@ -62,7 +62,7 @@
       "delta": {
         "cost_usd": "-0.0000060000",
         "latency_ms": -440,
-        "score": "-0.0600000000"
+        "score": "0.0100000000"
       },
       "prompt_hash": "930581d17cfac5da",
       "results": {
@@ -80,7 +80,7 @@
           "output_hash": "5a546fb867e3dcd1",
           "passed": true,
           "provider": "llama",
-          "score": "0.8600000000"
+          "score": "0.9300000000"
         }
       },
       "task": "general"
@@ -90,7 +90,7 @@
       "delta": {
         "cost_usd": "-0.0000068000",
         "latency_ms": -430,
-        "score": "-0.0400000000"
+        "score": "0.0100000000"
       },
       "prompt_hash": "120068df7833eaab",
       "results": {
@@ -108,7 +108,7 @@
           "output_hash": "8ba4f2bf8fc66146",
           "passed": true,
           "provider": "qwen",
-          "score": "0.8700000000"
+          "score": "0.9200000000"
         }
       },
       "task": "coding"
@@ -131,7 +131,7 @@
       "name": "candidate_auto"
     }
   },
-  "report_id": "12bebd8fe95c5ec5",
+  "report_id": "0c14d573f2ae3c56",
   "schema_version": "phase4-benchmark-report-v1",
   "summary": {
     "baseline": {

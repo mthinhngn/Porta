@@ -150,10 +150,13 @@ flowchart LR
 
 ## Public contract
 
-`GenerateRequest` accepts a gateway model alias, text input, sampling controls,
-and an output-token limit. It deliberately has no unauthenticated end-user
-identity field. Phase 2 may derive provider safety identifiers from authenticated
-actors without trusting a caller-supplied identity.
+`GenerateRequest` accepts a gateway model alias, text input, routing tier,
+sampling controls, and an output-token limit. `tier=standard` preserves the
+OpenAI-first deterministic route. `tier=auto` is evidence-gated by Phase 4 local
+benchmark results and uses the approved local provider first for the detected
+task category. The request deliberately has no unauthenticated end-user identity
+field. Phase 2 may derive provider safety identifiers from authenticated actors
+without trusting a caller-supplied identity.
 
 `GenerateResponse` returns:
 
@@ -181,8 +184,11 @@ Provider SDK and persistence types never cross the public HTTP boundary.
 4. A cache hit returns the encrypted cached response without provider execution
    or new accounting. A miss obtains a short-lived per-key reservation.
 5. The service classifies the request as coding or general, then resolves
-   eligible routes as `openai -> qwen -> llama` for coding or
-   `openai -> llama -> qwen` for general prompts, filtered by actor policy.
+   eligible routes. `tier=standard` uses `openai -> qwen -> llama` for coding
+   and `openai -> llama -> qwen` for general prompts. `tier=auto` uses
+   `qwen -> llama -> openai` for coding and `llama -> qwen -> openai` for
+   general prompts after Phase 4 evidence acceptance. Actor provider policy is
+   applied after policy ordering in both tiers.
 6. The ledger creates the gateway request and chronological provider attempts.
    Retry and fallback share one absolute deadline.
 7. Provider adapters normalize output, provider request IDs, token usage, cached

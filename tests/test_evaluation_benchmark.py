@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -15,16 +16,33 @@ from llm_gateway.evaluation.benchmark import (
 )
 
 
+def _mapping(value: object) -> dict[str, Any]:
+    return cast(dict[str, Any], value)
+
+
+def _case_list(value: object) -> list[dict[str, Any]]:
+    return cast(list[dict[str, Any]], value)
+
+
 def test_local_benchmark_compares_baseline_and_candidate() -> None:
     report = run_benchmark()
+    controls = _mapping(report["controls"])
+    summary = _mapping(report["summary"])
+    baseline_summary = _mapping(summary["baseline"])
+    candidate_summary = _mapping(summary["candidate_auto"])
 
-    assert report["controls"]["mode"] == "local"  # type: ignore[index]
-    assert report["controls"]["paid_live_enabled"] is False  # type: ignore[index]
-    assert report["controls"]["request_count"] == len(DEFAULT_FIXTURES) * 2  # type: ignore[index]
-    assert report["summary"]["baseline"]["case_count"] == len(DEFAULT_FIXTURES)  # type: ignore[index]
-    assert report["summary"]["candidate_auto"]["case_count"] == len(DEFAULT_FIXTURES)  # type: ignore[index]
-    assert report["summary"]["candidate_auto"]["total_cost_usd"] == "0.0000000000"  # type: ignore[index]
-    assert report["summary"]["baseline"]["total_cost_usd"] != "0.0000000000"  # type: ignore[index]
+    assert controls["mode"] == "local"
+    assert controls["paid_live_enabled"] is False
+    assert controls["request_count"] == len(DEFAULT_FIXTURES) * 2
+    assert baseline_summary["case_count"] == len(DEFAULT_FIXTURES)
+    assert candidate_summary["case_count"] == len(DEFAULT_FIXTURES)
+    assert candidate_summary["total_cost_usd"] == "0.0000000000"
+    assert baseline_summary["total_cost_usd"] != "0.0000000000"
+    for case in _case_list(report["cases"]):
+        results = _mapping(case["results"])
+        candidate = _mapping(results["candidate_auto"])
+        baseline = _mapping(results["baseline"])
+        assert Decimal(candidate["score"]) >= Decimal(baseline["score"])
 
 
 def test_report_generation_writes_deterministic_json(tmp_path: Path) -> None:
@@ -83,6 +101,6 @@ def test_local_report_shape_is_reproducible() -> None:
         "cases",
         "report_id",
     ]
-    assert [
-        case["case_id"] for case in first["cases"]  # type: ignore[index]
-    ] == sorted(case.case_id for case in DEFAULT_FIXTURES)
+    assert [case["case_id"] for case in _case_list(first["cases"])] == sorted(
+        case.case_id for case in DEFAULT_FIXTURES
+    )

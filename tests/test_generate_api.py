@@ -174,6 +174,7 @@ def _service(
     provider_order: list[str] | None = None,
     bootstraps: tuple[RouteBootstrap, ...] | None = None,
     timeout_seconds: float = 5.0,
+    auto_routing_enabled: bool = True,
 ) -> GenerationService:
     engine = create_engine(f"sqlite:///{database_path}")
     Base.metadata.create_all(engine)
@@ -197,6 +198,7 @@ def _service(
                 output_cost_per_million=Decimal("1.6000000000"),
             ),
         ),
+        auto_routing_enabled=auto_routing_enabled,
     )
     service.bootstrap()
     return service
@@ -212,6 +214,7 @@ def _client(
     bootstraps: tuple[RouteBootstrap, ...] | None = None,
     timeout_seconds: float = 5.0,
     allowed_providers: tuple[str, ...] | None = None,
+    auto_routing_enabled: bool = True,
 ) -> TestClient:
     settings = Settings(
         environment="test",
@@ -242,11 +245,47 @@ def _client(
             provider_order=provider_order,
             bootstraps=bootstraps,
             timeout_seconds=timeout_seconds,
+            auto_routing_enabled=auto_routing_enabled,
         ),
     )
     client = TestClient(app)
     client.headers.update(AUTHORIZATION_HEADER)
     return client
+
+
+def _phase4_route_bootstraps() -> tuple[RouteBootstrap, ...]:
+    return (
+        RouteBootstrap(
+            provider_name="openai",
+            provider_adapter="openai_responses",
+            gateway_model="gateway-default",
+            upstream_model="gpt-4.1-mini",
+            currency="USD",
+            input_cost_per_million=Decimal("0.4000000000"),
+            cached_input_cost_per_million=Decimal("0.1000000000"),
+            output_cost_per_million=Decimal("1.6000000000"),
+        ),
+        RouteBootstrap(
+            provider_name="llama",
+            provider_adapter="ollama_generate",
+            gateway_model="gateway-default",
+            upstream_model="llama3.2:3b",
+            currency="USD",
+            input_cost_per_million=Decimal("0"),
+            cached_input_cost_per_million=Decimal("0"),
+            output_cost_per_million=Decimal("0"),
+        ),
+        RouteBootstrap(
+            provider_name="qwen",
+            provider_adapter="ollama_generate",
+            gateway_model="gateway-default",
+            upstream_model="qwen2.5-coder:3b",
+            currency="USD",
+            input_cost_per_million=Decimal("0"),
+            cached_input_cost_per_million=Decimal("0"),
+            output_cost_per_million=Decimal("0"),
+        ),
+    )
 
 
 def test_lease_loss_before_persistence_creates_no_usage_row(tmp_path: Path) -> None:
@@ -912,6 +951,249 @@ def test_generate_preferred_local_failure_uses_alternate_local_model(tmp_path: P
     assert openai.calls == 2
     assert qwen.calls == 1
     assert llama.calls == 1
+
+
+def test_generate_explicit_standard_tier_preserves_openai_first_order(tmp_path: Path) -> None:
+    openai = SequenceProvider(
+        "openai",
+        [
+            GenerateProviderResult(
+                output="standard success",
+                usage=ProviderTokenUsage(
+                    input_tokens=2,
+                    cached_input_tokens=0,
+                    output_tokens=2,
+                    total_tokens=4,
+                ),
+            )
+        ],
+    )
+    qwen = SequenceProvider("qwen", [ProviderUnavailableError("must not run")])
+    llama = SequenceProvider("llama", [ProviderUnavailableError("must not run")])
+
+    with _client(
+        tmp_path,
+        {"openai": openai, "llama": llama, "qwen": qwen},
+        provider_order=["openai", "llama", "qwen"],
+        bootstraps=_phase4_route_bootstraps(),
+    ) as client:
+        response = client.post(
+            "/v1/generate",
+            json={
+                "model": "gateway-default",
+                "input": "Implement a Python function",
+                "tier": "standard",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "openai"
+    assert response.json()["routing_reason"] == "configured_single_path"
+    assert openai.calls == 1
+    assert qwen.calls == 0
+    assert llama.calls == 0
+
+
+def test_generate_auto_tier_uses_evidence_approved_local_first_order(tmp_path: Path) -> None:
+    openai = SequenceProvider("openai", [ProviderUnavailableError("must not run")])
+    qwen = SequenceProvider(
+        "qwen",
+        [
+            GenerateProviderResult(
+                output="def slugify_title(text): return text",
+                usage=ProviderTokenUsage(
+                    input_tokens=5,
+                    cached_input_tokens=0,
+                    output_tokens=6,
+                    total_tokens=11,
+                ),
+            )
+        ],
+    )
+    llama = SequenceProvider("llama", [ProviderUnavailableError("must not run")])
+
+    with _client(
+        tmp_path,
+        {"openai": openai, "llama": llama, "qwen": qwen},
+        provider_order=["openai", "llama", "qwen"],
+        bootstraps=_phase4_route_bootstraps(),
+    ) as client:
+        response = client.post(
+            "/v1/generate",
+            json={
+                "model": "gateway-default",
+                "input": "Implement a Python function",
+                "tier": "auto",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "qwen"
+    assert response.json()["routing_reason"] == "auto_routing_policy"
+    assert response.json()["attempt_count"] == 1
+    assert qwen.calls == 1
+    assert openai.calls == 0
+    assert llama.calls == 0
+
+
+def test_generate_auto_tier_respects_provider_allowlist(tmp_path: Path) -> None:
+    openai = SequenceProvider(
+        "openai",
+        [
+            GenerateProviderResult(
+                output="allowlist success",
+                usage=ProviderTokenUsage(
+                    input_tokens=2,
+                    cached_input_tokens=0,
+                    output_tokens=2,
+                    total_tokens=4,
+                ),
+            )
+        ],
+    )
+    qwen = SequenceProvider("qwen", [ProviderUnavailableError("must not run")])
+    llama = SequenceProvider("llama", [ProviderUnavailableError("must not run")])
+
+    with _client(
+        tmp_path,
+        {"openai": openai, "llama": llama, "qwen": qwen},
+        provider_order=["openai", "llama", "qwen"],
+        bootstraps=_phase4_route_bootstraps(),
+        allowed_providers=("openai",),
+    ) as client:
+        response = client.post(
+            "/v1/generate",
+            json={
+                "model": "gateway-default",
+                "input": "Implement a Python function",
+                "tier": "auto",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "openai"
+    assert response.json()["routing_reason"] == "auto_routing_policy"
+    assert openai.calls == 1
+    assert qwen.calls == 0
+    assert llama.calls == 0
+
+
+def test_generate_auto_tier_disabled_by_evidence_gate_stops_before_ledger(
+    tmp_path: Path,
+) -> None:
+    qwen = SequenceProvider(
+        "qwen",
+        [
+            GenerateProviderResult(
+                output="must not run",
+                usage=ProviderTokenUsage(
+                    input_tokens=1,
+                    cached_input_tokens=0,
+                    output_tokens=1,
+                    total_tokens=2,
+                ),
+            )
+        ],
+    )
+
+    with _client(
+        tmp_path,
+        {"qwen": qwen},
+        provider_order=["qwen"],
+        bootstraps=(_phase4_route_bootstraps()[2],),
+        auto_routing_enabled=False,
+    ) as client:
+        response = client.post(
+            "/v1/generate",
+            json={
+                "model": "gateway-default",
+                "input": "Implement a Python function",
+                "tier": "auto",
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "auto_routing_unavailable"
+    assert qwen.calls == 0
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        assert session.query(GatewayRequest).count() == 0
+        assert session.query(ProviderAttempt).count() == 0
+        assert session.query(UsageRecord).count() == 0
+    engine.dispose()
+
+
+def test_generate_rejects_invalid_tier_before_ledger_or_provider(tmp_path: Path) -> None:
+    provider = RecordingProvider()
+
+    with _client(tmp_path, {"openai": provider}) as client:
+        response = client.post(
+            "/v1/generate",
+            json={"model": "gateway-default", "input": "hello", "tier": "premium"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "validation_error"
+    assert provider.calls == 0
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        assert session.query(GatewayRequest).count() == 0
+        assert session.query(ProviderAttempt).count() == 0
+        assert session.query(UsageRecord).count() == 0
+    engine.dispose()
+
+
+def test_generate_auto_tier_fallback_preserves_single_usage_row(tmp_path: Path) -> None:
+    qwen = SequenceProvider("qwen", [ProviderUnavailableError("qwen unavailable")])
+    llama = SequenceProvider(
+        "llama",
+        [
+            GenerateProviderResult(
+                output="alternate local success",
+                usage=ProviderTokenUsage(
+                    input_tokens=3,
+                    cached_input_tokens=0,
+                    output_tokens=3,
+                    total_tokens=6,
+                ),
+            )
+        ],
+    )
+
+    with _client(
+        tmp_path,
+        {"qwen": qwen, "llama": llama},
+        provider_order=["llama", "qwen"],
+        bootstraps=_phase4_route_bootstraps()[1:],
+    ) as client:
+        response = client.post(
+            "/v1/generate",
+            json={
+                "model": "gateway-default",
+                "input": "Debug this function",
+                "tier": "auto",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "llama"
+    assert response.json()["attempt_count"] == 2
+    assert qwen.calls == 1
+    assert llama.calls == 1
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'generate.sqlite3'}")
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    with sessions() as session:
+        attempts = session.query(ProviderAttempt).order_by(ProviderAttempt.attempt_number).all()
+        usage_records = session.query(UsageRecord).all()
+    assert [attempt.status for attempt in attempts] == ["failed", "succeeded"]
+    assert len(usage_records) == 1
+    assert usage_records[0].provider_attempt_id == attempts[-1].id
+    engine.dispose()
 
 
 def test_generate_deadline_exhaustion_stops_extra_attempts(tmp_path: Path) -> None:

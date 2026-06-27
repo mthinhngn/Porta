@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -14,6 +14,7 @@ from llm_gateway.domain.base import ContractModel
 class GenerateRequest(ContractModel):
     model: Annotated[str, Field(min_length=1, max_length=255)]
     input: Annotated[str, Field(min_length=1, max_length=32768)]
+    tier: Literal["standard", "auto"] = "standard"
     temperature: Annotated[float, Field(ge=0.0, le=2.0)] | None = None
     top_p: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
     max_output_tokens: Annotated[int, Field(ge=16)] | None = None
